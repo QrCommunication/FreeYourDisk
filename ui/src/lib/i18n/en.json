@@ -64,5 +64,10 @@
     "clean_partial": "Freed {size}, {errors} errors",
     "clean_error": "Cleanup failed",
     "scan_error": "Scan failed"
+  },
+  "tray": {
+    "occupied": "Occupied space",
+    "open": "Open FreeYourDisk",
+    "clean": "Clean up"
   }
 }

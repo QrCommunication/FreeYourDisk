@@ -67,5 +67,10 @@
     "clean_partial": "{size} libérés, {errors} erreurs",
     "clean_error": "Échec du nettoyage",
     "scan_error": "Échec de l'analyse"
+  },
+  "tray": {
+    "occupied": "Espace occupé",
+    "open": "Ouvrir FreeYourDisk",
+    "clean": "Nettoyer"
   }
 }
