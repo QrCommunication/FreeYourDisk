@@ -116,9 +116,18 @@ mod tests {
 
     #[test]
     fn enums_serialize_snake_case() {
-        assert_eq!(serde_json::to_string(&ServiceId::BigFiles).unwrap(), "\"big_files\"");
-        assert_eq!(serde_json::to_string(&Destination::Trash).unwrap(), "\"trash\"");
-        assert_eq!(serde_json::to_string(&ItemKind::GitWorktree).unwrap(), "\"git_worktree\"");
+        assert_eq!(
+            serde_json::to_string(&ServiceId::BigFiles).unwrap(),
+            "\"big_files\""
+        );
+        assert_eq!(
+            serde_json::to_string(&Destination::Trash).unwrap(),
+            "\"trash\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ItemKind::GitWorktree).unwrap(),
+            "\"git_worktree\""
+        );
     }
 
     #[test]
