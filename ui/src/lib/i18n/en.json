@@ -1,0 +1,73 @@
+{
+  "app": { "name": "FreeYourDisk", "tagline": "Reclaim your disk, safely" },
+  "nav": { "dashboard": "Dashboard" },
+  "service": {
+    "temp": "Temporary files",
+    "big_files": "Largest files",
+    "git_repos": "Git worktrees",
+    "dev_cache": "Dev caches",
+    "temp_desc": "Old files in /tmp, /var/tmp and ~/.cache",
+    "big_files_desc": "The biggest files and folders on disk",
+    "git_repos_desc": "Stale and clean git worktrees to prune",
+    "dev_cache_desc": "node_modules, target, .venv and more"
+  },
+  "dashboard": {
+    "disk_usage": "Disk usage",
+    "reclaimable": "Reclaimable",
+    "detected": "detected",
+    "analyze": "Analyze",
+    "rescan": "Rescan",
+    "used_of": "{used} of {total}",
+    "free": "{free} free"
+  },
+  "table": {
+    "path": "Path",
+    "size": "Size",
+    "last_access": "Last access",
+    "root_badge": "root",
+    "selected": "{count} selected",
+    "never": "—"
+  },
+  "actions": {
+    "preview": "Review cleanup",
+    "confirm": "Confirm cleanup",
+    "cancel": "Cancel",
+    "back": "Back"
+  },
+  "confirm": {
+    "title": "Confirm cleanup",
+    "summary": "{count} items",
+    "destination": "Destination",
+    "to_trash": "Move to trash",
+    "to_trash_hint": "Recoverable from the trash",
+    "permanent_toggle": "Delete permanently (irreversible)",
+    "root_warning": "Some items require administrator rights and will be permanently removed.",
+    "empty": "Select items to clean first.",
+    "acknowledge": "I understand this cannot be undone"
+  },
+  "report": {
+    "title": "Cleanup complete",
+    "freed": "Space freed",
+    "removed": "{count} items removed",
+    "errors": "{count} errors",
+    "done": "Done"
+  },
+  "state": {
+    "loading": "Scanning…",
+    "empty_title": "Nothing to clean",
+    "empty_desc": "This area is already clean.",
+    "error_title": "Scan failed",
+    "retry": "Retry"
+  },
+  "toast": {
+    "clean_success": "Freed {size}",
+    "clean_partial": "Freed {size}, {errors} errors",
+    "clean_error": "Cleanup failed",
+    "scan_error": "Scan failed"
+  },
+  "tray": {
+    "occupied": "Occupied space",
+    "open": "Open FreeYourDisk",
+    "clean": "Clean up"
+  }
+}

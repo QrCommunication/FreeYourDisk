@@ -1,0 +1,76 @@
+{
+  "app": {
+    "name": "FreeYourDisk",
+    "tagline": "Libérez votre disque, en toute sécurité"
+  },
+  "nav": { "dashboard": "Tableau de bord" },
+  "service": {
+    "temp": "Fichiers temporaires",
+    "big_files": "Plus gros fichiers",
+    "git_repos": "Worktrees git",
+    "dev_cache": "Caches de dev",
+    "temp_desc": "Vieux fichiers dans /tmp, /var/tmp et ~/.cache",
+    "big_files_desc": "Les plus gros fichiers et dossiers du disque",
+    "git_repos_desc": "Worktrees git propres ou obsolètes à élaguer",
+    "dev_cache_desc": "node_modules, target, .venv et plus"
+  },
+  "dashboard": {
+    "disk_usage": "Utilisation du disque",
+    "reclaimable": "Récupérable",
+    "detected": "détecté",
+    "analyze": "Analyser",
+    "rescan": "Réanalyser",
+    "used_of": "{used} sur {total}",
+    "free": "{free} libres"
+  },
+  "table": {
+    "path": "Chemin",
+    "size": "Taille",
+    "last_access": "Dernier accès",
+    "root_badge": "root",
+    "selected": "{count} sélectionnés",
+    "never": "—"
+  },
+  "actions": {
+    "preview": "Vérifier le nettoyage",
+    "confirm": "Confirmer le nettoyage",
+    "cancel": "Annuler",
+    "back": "Retour"
+  },
+  "confirm": {
+    "title": "Confirmer le nettoyage",
+    "summary": "{count} éléments",
+    "destination": "Destination",
+    "to_trash": "Mettre à la corbeille",
+    "to_trash_hint": "Récupérable depuis la corbeille",
+    "permanent_toggle": "Supprimer définitivement (irréversible)",
+    "root_warning": "Certains éléments nécessitent les droits administrateur et seront supprimés définitivement.",
+    "empty": "Sélectionnez d'abord des éléments à nettoyer.",
+    "acknowledge": "Je comprends que c'est irréversible"
+  },
+  "report": {
+    "title": "Nettoyage terminé",
+    "freed": "Espace libéré",
+    "removed": "{count} éléments supprimés",
+    "errors": "{count} erreurs",
+    "done": "Terminé"
+  },
+  "state": {
+    "loading": "Analyse…",
+    "empty_title": "Rien à nettoyer",
+    "empty_desc": "Cette zone est déjà propre.",
+    "error_title": "Échec de l'analyse",
+    "retry": "Réessayer"
+  },
+  "toast": {
+    "clean_success": "{size} libérés",
+    "clean_partial": "{size} libérés, {errors} erreurs",
+    "clean_error": "Échec du nettoyage",
+    "scan_error": "Échec de l'analyse"
+  },
+  "tray": {
+    "occupied": "Espace occupé",
+    "open": "Ouvrir FreeYourDisk",
+    "clean": "Nettoyer"
+  }
+}
