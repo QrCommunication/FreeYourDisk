@@ -7,8 +7,8 @@ members = [
     "crates/core-trash",
     "crates/core-services",
     "crates/privhelper",
+    "src-tauri",
 ]
-# src-tauri is added in Phase 5 (needs a built frontend to compile the Tauri context).
 
 [workspace.package]
 version = "0.1.0"

@@ -1,0 +1,23 @@
+[package]
+name = "freeyourdisk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+default-run = "freeyourdisk"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+core-ipc = { path = "../crates/core-ipc" }
+core-trash = { path = "../crates/core-trash" }
+core-services = { path = "../crates/core-services" }
+sysinfo = "0.33"
+
+[dev-dependencies]
+tempfile = { workspace = true }
