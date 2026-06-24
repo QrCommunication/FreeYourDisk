@@ -1,0 +1,73 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+/* Design tokens — slate-950 base, single teal accent, rose danger. */
+@theme {
+  --color-base: #0b0e14;
+  --color-surface: #11151b;
+  --color-elevated: #161c25;
+  --color-line: #1f2630;
+  --color-ink: #e6edf3;
+  --color-muted: #8b97a5;
+  --color-faint: #5b6573;
+  --color-accent: #2dd4bf;
+  --color-accent-ink: #0b0e14;
+  --color-accent-soft: #0f3d39;
+  --color-danger: #fb7185;
+  --color-danger-soft: #4c1d24;
+  --color-warn: #fbbf24;
+
+  --font-sans: "Geist Variable", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, monospace;
+
+  --radius-lg: 0.9rem;
+  --radius-xl: 1.25rem;
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-base);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--color-accent) 30%, transparent);
+  }
+
+  /* Tabular numerals everywhere numbers matter. */
+  .nums {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-faint);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
