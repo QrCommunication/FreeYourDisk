@@ -1,0 +1,9 @@
+/target
+**/target
+/ui/node_modules
+/ui/dist
+/ui/.svelte-kit
+**/*.rs.bk
+*.deb
+target/debian
+.DS_Store
