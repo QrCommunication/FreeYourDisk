@@ -197,7 +197,8 @@ pub fn restart_process(pid: u32) -> Result<(), String> {
     Ok(())
 }
 
-/// Critical process names we never panic-kill.
+/// Critical process names we never panic-kill (Linux desktop daemons).
+#[cfg(not(target_os = "macos"))]
 const PROTECTED: &[&str] = &[
     "systemd",
     "init",
@@ -215,6 +216,30 @@ const PROTECTED: &[&str] = &[
     "freeyourdisk",
     "memguardd",
     "mem-guard",
+    "sshd",
+];
+
+/// Critical process names we never panic-kill (macOS system services).
+#[cfg(target_os = "macos")]
+const PROTECTED: &[&str] = &[
+    "launchd",
+    "kernel_task",
+    "WindowServer",
+    "loginwindow",
+    "Finder",
+    "Dock",
+    "SystemUIServer",
+    "coreaudiod",
+    "cfprefsd",
+    "mds",
+    "mds_stores",
+    "mdworker",
+    "distnoted",
+    "UserEventAgent",
+    "configd",
+    "securityd",
+    "freeyourdisk",
+    "FreeYourDisk",
     "sshd",
 ];
 
@@ -236,6 +261,8 @@ pub fn panic_kill() -> Option<ProcInfo> {
 /// negative nice both require privilege; failures are ignored (the bundled
 /// systemd unit / pkexec helper grant the real thing).
 pub fn raise_priority() {
+    // OOM immunity is a Linux concept; macOS has no per-process oom score.
+    #[cfg(target_os = "linux")]
     let _ = std::fs::write("/proc/self/oom_score_adj", "-1000");
     unsafe {
         libc::setpriority(libc::PRIO_PROCESS, 0, -5);

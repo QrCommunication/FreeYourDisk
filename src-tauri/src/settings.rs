@@ -23,8 +23,14 @@ pub struct Settings {
     pub shortcut: String,
 }
 
+#[cfg(not(target_os = "macos"))]
 fn default_shortcut() -> String {
     "Ctrl+Alt+Delete".to_string()
+}
+
+#[cfg(target_os = "macos")]
+fn default_shortcut() -> String {
+    "Cmd+Shift+M".to_string()
 }
 
 impl Default for Settings {
@@ -40,13 +46,19 @@ impl Default for Settings {
     }
 }
 
-/// XDG config dir for FreeYourDisk (`~/.config/freeyourdisk`). Also used by the
-/// snapshot store.
+/// Per-user config dir for FreeYourDisk. Also used by the snapshot store.
+/// Linux: XDG (`~/.config/freeyourdisk`). macOS: `~/Library/Application Support`.
+#[cfg(not(target_os = "macos"))]
 pub fn config_dir() -> PathBuf {
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| home().join(".config"))
         .join("freeyourdisk")
+}
+
+#[cfg(target_os = "macos")]
+pub fn config_dir() -> PathBuf {
+    home().join("Library/Application Support/FreeYourDisk")
 }
 
 fn home() -> PathBuf {
@@ -77,17 +89,15 @@ pub fn save(settings: &Settings) -> Result<(), String> {
     Ok(())
 }
 
-fn autostart_path() -> PathBuf {
-    std::env::var_os("XDG_CONFIG_HOME")
+/// Create or remove the launch-at-login entry.
+/// Linux: an XDG autostart `.desktop`. macOS: a LaunchAgent plist.
+#[cfg(not(target_os = "macos"))]
+pub fn apply_autostart(enabled: bool) -> Result<(), String> {
+    let path = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| home().join(".config"))
         .join("autostart")
-        .join("freeyourdisk.desktop")
-}
-
-/// Create or remove the XDG autostart entry.
-pub fn apply_autostart(enabled: bool) -> Result<(), String> {
-    let path = autostart_path();
+        .join("freeyourdisk.desktop");
     if enabled {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -100,6 +110,32 @@ pub fn apply_autostart(enabled: bool) -> Result<(), String> {
             Comment=Safe disk cleanup\n\
             X-GNOME-Autostart-enabled=true\n";
         fs::write(&path, desktop).map_err(|e| e.to_string())?;
+    } else {
+        let _ = fs::remove_file(&path);
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+pub fn apply_autostart(enabled: bool) -> Result<(), String> {
+    let path = home().join("Library/LaunchAgents/com.qrcommunication.freeyourdisk.plist");
+    if enabled {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let plist = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
+             <plist version=\"1.0\"><dict>\
+             <key>Label</key><string>com.qrcommunication.freeyourdisk</string>\
+             <key>ProgramArguments</key><array><string>{}</string></array>\
+             <key>RunAtLoad</key><true/>\
+             <key>ProcessType</key><string>Interactive</string>\
+             </dict></plist>\n",
+            exe.display()
+        );
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        fs::write(&path, plist).map_err(|e| e.to_string())?;
     } else {
         let _ = fs::remove_file(&path);
     }

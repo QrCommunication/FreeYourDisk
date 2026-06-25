@@ -30,6 +30,7 @@ pub struct AppActionReport {
     pub errors: Vec<String>,
 }
 
+#[cfg(not(target_os = "macos"))]
 const APT_TOP: usize = 80;
 
 fn run(cmd: &str, args: &[&str]) -> Option<String> {
@@ -48,6 +49,7 @@ fn home() -> PathBuf {
 
 // ---- apt / dpkg -----------------------------------------------------------
 
+#[cfg(not(target_os = "macos"))]
 fn detect_apt() -> Vec<AppEntry> {
     let Some(out) = run(
         "dpkg-query",
@@ -88,6 +90,7 @@ fn detect_apt() -> Vec<AppEntry> {
 
 // ---- flatpak --------------------------------------------------------------
 
+#[cfg(not(target_os = "macos"))]
 fn parse_human_size(s: &str) -> u64 {
     let s = s.trim().replace(',', ".");
     let (num, mult) = if let Some(n) = s.strip_suffix("GB").or_else(|| s.strip_suffix("GiB")) {
@@ -108,6 +111,7 @@ fn parse_human_size(s: &str) -> u64 {
     (num.trim().parse::<f64>().unwrap_or(0.0) * mult as f64) as u64
 }
 
+#[cfg(not(target_os = "macos"))]
 fn detect_flatpak() -> Vec<AppEntry> {
     let Some(out) = run(
         "flatpak",
@@ -145,6 +149,7 @@ fn detect_flatpak() -> Vec<AppEntry> {
 
 // ---- snap -----------------------------------------------------------------
 
+#[cfg(not(target_os = "macos"))]
 fn snap_size(name: &str) -> u64 {
     // The installed snap is the squashfs at /var/lib/snapd/snaps/<name>_<rev>.snap
     let dir = Path::new("/var/lib/snapd/snaps");
@@ -162,6 +167,7 @@ fn snap_size(name: &str) -> u64 {
         .unwrap_or(0)
 }
 
+#[cfg(not(target_os = "macos"))]
 fn detect_snap() -> Vec<AppEntry> {
     let Some(out) = run("snap", &["list"]) else {
         return Vec::new();
@@ -195,6 +201,7 @@ fn detect_snap() -> Vec<AppEntry> {
 
 // ---- AppImages & app folders ---------------------------------------------
 
+#[cfg(not(target_os = "macos"))]
 fn detect_appimages() -> Vec<AppEntry> {
     let h = home();
     let dirs = [
@@ -250,6 +257,7 @@ fn detect_appimages() -> Vec<AppEntry> {
 }
 
 /// Full inventory, largest first.
+#[cfg(not(target_os = "macos"))]
 pub fn list() -> Vec<AppEntry> {
     let mut apps = Vec::new();
     apps.extend(detect_apt());
@@ -260,8 +268,81 @@ pub fn list() -> Vec<AppEntry> {
     apps
 }
 
+#[cfg(target_os = "macos")]
+pub fn list() -> Vec<AppEntry> {
+    let mut apps = detect_macos_apps();
+    apps.sort_by_key(|a| std::cmp::Reverse(a.size_bytes));
+    apps
+}
+
+/// Recursive byte size of an `.app` bundle (BSD `du -skx` → KB).
+#[cfg(target_os = "macos")]
+fn app_dir_size(path: &Path) -> u64 {
+    Command::new("du")
+        .args(["-skx"])
+        .arg(path)
+        .output()
+        .ok()
+        .and_then(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .split_whitespace()
+                .next()
+                .and_then(|n| n.parse::<u64>().ok())
+        })
+        .map(|kb| kb * 1024)
+        .unwrap_or(0)
+}
+
+/// `.app` bundles in /Applications and ~/Applications, ranked by size.
+#[cfg(target_os = "macos")]
+fn detect_macos_apps() -> Vec<AppEntry> {
+    let mut apps = Vec::new();
+    let bases = [PathBuf::from("/Applications"), home().join("Applications")];
+    for base in bases {
+        let Ok(entries) = std::fs::read_dir(&base) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|x| x.to_str()) != Some("app") {
+                continue;
+            }
+            let name = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            apps.push(AppEntry {
+                id: format!("app:{}", path.to_string_lossy()),
+                name,
+                source: "app".into(),
+                version: None,
+                size_bytes: app_dir_size(&path),
+                requires_root: false,
+                protected: false,
+            });
+        }
+    }
+    apps
+}
+
+/// macOS app bundles live under /Applications or ~/Applications only.
+#[cfg(target_os = "macos")]
+fn within_macos_app_base(path: &Path) -> bool {
+    let Ok(canon) = std::fs::canonicalize(path) else {
+        return false;
+    };
+    [PathBuf::from("/Applications"), home().join("Applications")]
+        .iter()
+        .any(|base| {
+            std::fs::canonicalize(base)
+                .map(|b| canon.starts_with(&b))
+                .unwrap_or(false)
+        })
+}
+
 /// Ids of applications with a newer version available (best-effort, may use the
 /// network). Returns the subset of `id`s that are upgradable.
+#[cfg(not(target_os = "macos"))]
 pub fn updates() -> Vec<String> {
     let mut out = Vec::new();
     // apt: uses the local index (no root). Lines: "pkg/repo version arch [upgradable from: ...]"
@@ -306,11 +387,13 @@ fn split_ids(ids: &[String], prefix: &str) -> Vec<String> {
 /// Safe argv value: non-empty and never looks like a flag (anti argument
 /// injection). Package/app ids are also cross-checked against the live
 /// inventory, so this is defence in depth.
+#[cfg(not(target_os = "macos"))]
 fn safe_value(s: &str) -> bool {
     !s.is_empty() && !s.starts_with('-')
 }
 
 /// Allowlisted AppImage/app-folder base directories.
+#[cfg(not(target_os = "macos"))]
 fn appimage_bases() -> Vec<PathBuf> {
     let h = home();
     vec![
@@ -325,6 +408,7 @@ fn appimage_bases() -> Vec<PathBuf> {
 }
 
 /// True only if `path`, after canonicalisation, lives inside an allowed base.
+#[cfg(not(target_os = "macos"))]
 fn within_allowed_base(path: &Path) -> bool {
     let Ok(canon) = std::fs::canonicalize(path) else {
         return false;
@@ -379,6 +463,7 @@ fn validate_against_inventory(
 
 /// Delete the AppImages/app folders among `ids`, but only those that resolve
 /// inside an allowed base directory.
+#[cfg(not(target_os = "macos"))]
 fn remove_appimages(known: &[String], report: &mut AppActionReport) {
     for path in split_ids(known, "appimage:") {
         let p = Path::new(&path);
@@ -401,7 +486,15 @@ fn remove_appimages(known: &[String], report: &mut AppActionReport) {
     }
 }
 
+/// macOS: `.app` bundles have no built-in update channel, so nothing is reported
+/// as upgradable here.
+#[cfg(target_os = "macos")]
+pub fn updates() -> Vec<String> {
+    Vec::new()
+}
+
 /// Batch uninstall. apt/snap go through pkexec; flatpak and AppImages don't.
+#[cfg(not(target_os = "macos"))]
 pub fn uninstall(ids: &[String]) -> AppActionReport {
     let mut report = AppActionReport::default();
     let known = validate_against_inventory(ids, &mut report, true);
@@ -440,7 +533,40 @@ pub fn uninstall(ids: &[String]) -> AppActionReport {
     report
 }
 
+/// macOS: move the selected `.app` bundles to the Trash (recoverable). Only
+/// bundles validated against the live inventory and living under an allowed base
+/// are touched.
+#[cfg(target_os = "macos")]
+pub fn uninstall(ids: &[String]) -> AppActionReport {
+    let mut report = AppActionReport::default();
+    let known = validate_against_inventory(ids, &mut report, true);
+    for path in split_ids(&known, "app:") {
+        let p = Path::new(&path);
+        if !within_macos_app_base(p) {
+            report
+                .errors
+                .push(format!("refused (outside /Applications): {path}"));
+            continue;
+        }
+        let script = format!(
+            "tell application \"Finder\" to delete POSIX file \"{}\"",
+            path.replace('"', "")
+        );
+        let mut cmd = Command::new("osascript");
+        cmd.args(["-e", &script]);
+        exec(&mut report, &format!("trashed {path}"), cmd);
+    }
+    report
+}
+
+/// macOS: `.app` bundles have no in-place update mechanism, so this is a no-op.
+#[cfg(target_os = "macos")]
+pub fn update(_ids: &[String]) -> AppActionReport {
+    AppActionReport::default()
+}
+
 /// Batch update.
+#[cfg(not(target_os = "macos"))]
 pub fn update(ids: &[String]) -> AppActionReport {
     let mut report = AppActionReport::default();
     let known = validate_against_inventory(ids, &mut report, false);

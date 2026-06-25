@@ -24,21 +24,30 @@ pub struct TempService {
 impl TempService {
     /// Default roots for a given home directory.
     pub fn with_defaults(home: &Path, min_age_days: u32) -> Self {
+        #[allow(unused_mut)] // `mut` is used on the macOS path below.
+        let mut roots = vec![
+            TempRoot {
+                path: PathBuf::from("/tmp"),
+                requires_root: true,
+            },
+            TempRoot {
+                path: PathBuf::from("/var/tmp"),
+                requires_root: true,
+            },
+            // ~/.cache (XDG; used by some cross-platform apps on macOS too).
+            TempRoot {
+                path: home.join(".cache"),
+                requires_root: false,
+            },
+        ];
+        // macOS keeps user caches under ~/Library/Caches.
+        #[cfg(target_os = "macos")]
+        roots.push(TempRoot {
+            path: home.join("Library/Caches"),
+            requires_root: false,
+        });
         Self {
-            roots: vec![
-                TempRoot {
-                    path: PathBuf::from("/tmp"),
-                    requires_root: true,
-                },
-                TempRoot {
-                    path: PathBuf::from("/var/tmp"),
-                    requires_root: true,
-                },
-                TempRoot {
-                    path: home.join(".cache"),
-                    requires_root: false,
-                },
-            ],
+            roots,
             min_age_days,
         }
     }

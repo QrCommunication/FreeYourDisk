@@ -109,12 +109,26 @@ impl Service for AppCacheService {
             }
         }
 
-        // 4. Package-manager caches that live outside ~/.cache.
+        // 4. Package-manager caches that live outside ~/.cache (also on macOS).
         for rel in [".npm/_cacache", ".yarn/cache", ".bun/install/cache"] {
             let cache = h.join(rel);
             if cache.is_dir() {
                 Self::push_dir(&mut items, cache);
             }
+        }
+
+        // 5. macOS: per-app caches under ~/Library/Caches and Chromium/Electron
+        //    caches under ~/Library/Application Support.
+        #[cfg(target_os = "macos")]
+        {
+            if let Ok(entries) = fs::read_dir(h.join("Library/Caches")) {
+                for entry in entries.flatten() {
+                    if entry.path().is_dir() {
+                        Self::push_dir(&mut items, entry.path());
+                    }
+                }
+            }
+            Self::collect(&h.join("Library/Application Support"), 4, &mut items);
         }
 
         let total_bytes = items.iter().map(|item| item.size_bytes).sum();

@@ -4,9 +4,9 @@
 //! helper via `pkexec`. The helper invocation is injected so the routing logic
 //! is unit-testable without root.
 
-use core_ipc::{
-    DeletionPlan, Destination, ExecutionReport, InstallReport, ItemError, ScanItem, SmartInfo,
-};
+#[cfg(not(target_os = "macos"))]
+use core_ipc::InstallReport;
+use core_ipc::{DeletionPlan, Destination, ExecutionReport, ItemError, ScanItem, SmartInfo};
 use core_trash::Zones;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -23,9 +23,19 @@ pub fn resolve_helper_path() -> PathBuf {
         return installed;
     }
     if let Ok(exe) = std::env::current_exe() {
-        if let Some(sibling) = exe.parent().map(|d| d.join("freeyourdisk-helper")) {
+        if let Some(dir) = exe.parent() {
+            // Dev build / Linux: sibling of the running binary.
+            let sibling = dir.join("freeyourdisk-helper");
             if sibling.exists() {
                 return sibling;
+            }
+            // macOS .app bundle: Contents/MacOS/<exe> → Contents/Resources/helper.
+            #[cfg(target_os = "macos")]
+            {
+                let resource = dir.join("../Resources/freeyourdisk-helper");
+                if resource.exists() {
+                    return resource;
+                }
             }
         }
     }
@@ -104,6 +114,7 @@ fn err_report(plan: &DeletionPlan, message: &str) -> ExecutionReport {
 }
 
 /// Real helper invocation: `pkexec <helper>`, plan on stdin, report on stdout.
+#[cfg(not(target_os = "macos"))]
 pub fn pkexec_helper(plan: &DeletionPlan) -> ExecutionReport {
     let json = match serde_json::to_string(plan) {
         Ok(json) => json,
@@ -139,6 +150,7 @@ pub fn pkexec_helper(plan: &DeletionPlan) -> ExecutionReport {
 
 /// Read SMART for every device in one privileged call. Returns an empty vec if
 /// pkexec is cancelled or the helper/smartctl is unavailable (graceful).
+#[cfg(not(target_os = "macos"))]
 pub fn pkexec_smart(devices: &[String]) -> Vec<SmartInfo> {
     if devices.is_empty() {
         return Vec::new();
@@ -154,8 +166,77 @@ pub fn pkexec_smart(devices: &[String]) -> Vec<SmartInfo> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// macOS: privilege escalation via the native auth dialog
+// (`osascript … with administrator privileges`). The plan is staged to a temp
+// file the helper reads from stdin; the helper re-validates everything.
+// ---------------------------------------------------------------------------
+#[cfg(target_os = "macos")]
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+#[cfg(target_os = "macos")]
+fn osascript_admin(shell_cmd: &str) -> Option<String> {
+    let script = format!(
+        "do shell script \"{}\" with administrator privileges",
+        shell_cmd.replace('\\', "\\\\").replace('"', "\\\"")
+    );
+    let out = Command::new("osascript")
+        .args(["-e", &script])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None; // user cancelled the auth dialog
+    }
+    Some(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+#[cfg(target_os = "macos")]
+pub fn pkexec_helper(plan: &DeletionPlan) -> ExecutionReport {
+    let json = match serde_json::to_string(plan) {
+        Ok(json) => json,
+        Err(err) => return err_report(plan, &err.to_string()),
+    };
+    let tmp = std::env::temp_dir().join(format!("fyd-plan-{}.json", std::process::id()));
+    if std::fs::write(&tmp, &json).is_err() {
+        return err_report(plan, "failed to stage deletion plan");
+    }
+    let shell = format!(
+        "{} < {}",
+        shell_quote(&resolve_helper_path().to_string_lossy()),
+        shell_quote(&tmp.to_string_lossy())
+    );
+    let result = osascript_admin(&shell);
+    let _ = std::fs::remove_file(&tmp);
+    match result {
+        Some(stdout) => serde_json::from_str(stdout.trim())
+            .unwrap_or_else(|_| err_report(plan, "helper returned no report (cancelled?)")),
+        None => err_report(plan, "authentication cancelled"),
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub fn pkexec_smart(devices: &[String]) -> Vec<SmartInfo> {
+    if devices.is_empty() {
+        return Vec::new();
+    }
+    let mut shell = shell_quote(&resolve_helper_path().to_string_lossy());
+    shell.push_str(" smart");
+    for dev in devices {
+        shell.push(' ');
+        shell.push_str(&shell_quote(dev));
+    }
+    match osascript_admin(&shell) {
+        Some(stdout) => serde_json::from_str(stdout.trim()).unwrap_or_default(),
+        None => Vec::new(),
+    }
+}
+
 /// Install SMART tools as root via the helper (`install-deps <manager> <pkg>…`).
 /// The helper re-validates the package names against its own allowlist.
+/// (Linux only — macOS installs via Homebrew at user level.)
+#[cfg(not(target_os = "macos"))]
 pub fn pkexec_install_deps(manager: &str, packages: &[String]) -> InstallReport {
     let mut cmd = Command::new("pkexec");
     cmd.arg(resolve_helper_path())

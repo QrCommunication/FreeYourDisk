@@ -94,6 +94,14 @@
           "/usr/share/metainfo/net.rlconseil.FreeYourDisk.metainfo.xml": "../packaging/net.rlconseil.FreeYourDisk.metainfo.xml"
         }
       }
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "dmg": {
+        "appPosition": { "x": 180, "y": 220 },
+        "applicationFolderPosition": { "x": 480, "y": 220 },
+        "windowSize": { "width": 660, "height": 420 }
+      }
     }
   }
 }

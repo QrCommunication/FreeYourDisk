@@ -39,6 +39,8 @@ fn has_binary(bin: &str) -> bool {
         "/sbin",
         "/usr/local/bin",
         "/usr/local/sbin",
+        "/opt/homebrew/bin", // macOS / Apple Silicon Homebrew
+        "/opt/homebrew/sbin",
     ] {
         let pb = PathBuf::from(extra);
         if !dirs.contains(&pb) {
@@ -50,6 +52,7 @@ fn has_binary(bin: &str) -> bool {
 
 /// Detect the system package manager by its binary (most reliable across
 /// derivatives — an Ubuntu flavour still has `apt-get`).
+#[cfg(not(target_os = "macos"))]
 pub fn detect_manager() -> Option<String> {
     for (bin, key) in [
         ("apt-get", "apt"),
@@ -64,13 +67,30 @@ pub fn detect_manager() -> Option<String> {
     None
 }
 
+/// macOS uses Homebrew. (Apple Silicon installs it under /opt/homebrew/bin.)
+#[cfg(target_os = "macos")]
+pub fn detect_manager() -> Option<String> {
+    if has_binary("brew") || std::path::Path::new("/opt/homebrew/bin/brew").is_file() {
+        Some("brew".to_string())
+    } else {
+        None
+    }
+}
+
 /// What SMART tooling this machine needs vs. what it already has.
 pub fn status() -> SmartDepsStatus {
     let disks = health::disks();
-    let nvme_needed = disks.iter().any(|d| d.device.starts_with("nvme"));
-    let sata_needed = disks
-        .iter()
-        .any(|d| d.device.starts_with("sd") || d.device.starts_with("hd"));
+    // On macOS `smartctl` covers NVMe too (no separate nvme-cli), and disks are
+    // `diskN`, so we just key off "any disk present → smartmontools".
+    #[cfg(target_os = "macos")]
+    let (nvme_needed, sata_needed) = (false, !disks.is_empty());
+    #[cfg(not(target_os = "macos"))]
+    let (nvme_needed, sata_needed) = (
+        disks.iter().any(|d| d.device.starts_with("nvme")),
+        disks
+            .iter()
+            .any(|d| d.device.starts_with("sd") || d.device.starts_with("hd")),
+    );
 
     let nvme_installed = has_binary("nvme");
     let smartctl_installed = has_binary("smartctl");
@@ -100,6 +120,39 @@ pub fn status() -> SmartDepsStatus {
 /// dictates what gets installed).
 pub fn missing_packages() -> Vec<String> {
     status().missing
+}
+
+/// macOS: install via Homebrew as the current user (Homebrew refuses to run as
+/// root, so there is no privilege escalation here).
+#[cfg(target_os = "macos")]
+pub fn brew_install(packages: &[String]) -> core_ipc::InstallReport {
+    let brew = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+        .into_iter()
+        .find(|p| std::path::Path::new(p).is_file())
+        .unwrap_or("brew");
+    let mut cmd = std::process::Command::new(brew);
+    cmd.arg("install");
+    for pkg in packages {
+        cmd.arg(pkg);
+    }
+    match cmd.output() {
+        Ok(out) if out.status.success() => core_ipc::InstallReport {
+            success: true,
+            message: format!("Installed: {}", packages.join(", ")),
+        },
+        Ok(out) => core_ipc::InstallReport {
+            success: false,
+            message: String::from_utf8_lossy(&out.stderr)
+                .lines()
+                .last()
+                .unwrap_or("brew install failed")
+                .to_string(),
+        },
+        Err(err) => core_ipc::InstallReport {
+            success: false,
+            message: format!("failed to run brew: {err}"),
+        },
+    }
 }
 
 #[cfg(test)]

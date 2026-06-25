@@ -70,13 +70,27 @@ fn raise_and_alert(app: &AppHandle, alert: LowSpaceAlert) {
         let _ = win.set_focus();
     }
     let _ = app.emit("low-space", alert.clone());
+    let body = format!(
+        "{} : {:.0}% libre. Pensez à libérer de l'espace.",
+        alert.mount, alert.free_percent
+    );
+
+    #[cfg(not(target_os = "macos"))]
     let _ = Command::new("notify-send")
         .arg("--app-name=FreeYourDisk")
         .arg("--urgency=critical")
         .arg("FreeYourDisk")
-        .arg(format!(
-            "{} : {:.0}% libre. Pensez à libérer de l'espace.",
-            alert.mount, alert.free_percent
-        ))
+        .arg(&body)
         .status();
+
+    #[cfg(target_os = "macos")]
+    {
+        let safe = body.replace('"', "");
+        let _ = Command::new("osascript")
+            .args([
+                "-e",
+                &format!("display notification \"{safe}\" with title \"FreeYourDisk\""),
+            ])
+            .status();
+    }
 }

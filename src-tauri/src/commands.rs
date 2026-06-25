@@ -104,7 +104,8 @@ pub async fn disk_usage() -> Result<Vec<MountUsage>, String> {
     .map_err(|e| e.to_string())
 }
 
-/// Whether the weekly cleanup systemd user timer is enabled.
+/// Whether the weekly cleanup timer is enabled (systemd on Linux, launchd on macOS).
+#[cfg(not(target_os = "macos"))]
 #[tauri::command]
 pub fn schedule_enabled() -> bool {
     std::process::Command::new("systemctl")
@@ -115,6 +116,7 @@ pub fn schedule_enabled() -> bool {
 }
 
 /// Enable or disable (and start/stop) the weekly cleanup timer.
+#[cfg(not(target_os = "macos"))]
 #[tauri::command]
 pub fn set_schedule(enabled: bool) -> Result<bool, String> {
     let action = if enabled { "enable" } else { "disable" };
@@ -126,6 +128,56 @@ pub fn set_schedule(enabled: bool) -> Result<bool, String> {
         Ok(enabled)
     } else {
         Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
+}
+
+/// macOS: a LaunchAgent that runs the headless temp/cache cleanup weekly.
+#[cfg(target_os = "macos")]
+fn cleanup_plist_path() -> std::path::PathBuf {
+    std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+        .join("Library/LaunchAgents/com.qrcommunication.freeyourdisk.cleanup.plist")
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn schedule_enabled() -> bool {
+    cleanup_plist_path().is_file()
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn set_schedule(enabled: bool) -> Result<bool, String> {
+    let path = cleanup_plist_path();
+    if enabled {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let plist = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
+             <plist version=\"1.0\"><dict>\
+             <key>Label</key><string>com.qrcommunication.freeyourdisk.cleanup</string>\
+             <key>ProgramArguments</key><array>\
+             <string>{}</string><string>--headless</string><string>--service=temp</string><string>--apply</string>\
+             </array>\
+             <key>StartCalendarInterval</key><dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>3</integer></dict>\
+             </dict></plist>\n",
+            exe.display()
+        );
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&path, plist).map_err(|e| e.to_string())?;
+        let _ = std::process::Command::new("launchctl")
+            .args(["load", "-w"])
+            .arg(&path)
+            .output();
+        Ok(true)
+    } else {
+        let _ = std::process::Command::new("launchctl")
+            .args(["unload", "-w"])
+            .arg(&path)
+            .output();
+        let _ = std::fs::remove_file(&path);
+        Ok(false)
     }
 }
 
@@ -176,6 +228,7 @@ pub async fn home_total(state: State<'_, AppState>) -> Result<u64, String> {
 #[tauri::command]
 pub async fn system_total() -> Result<u64, String> {
     tauri::async_runtime::spawn_blocking(|| {
+        #[cfg(not(target_os = "macos"))]
         const ROOTS: &[&str] = &[
             "/usr",
             "/var",
@@ -185,6 +238,16 @@ pub async fn system_total() -> Result<u64, String> {
             "/root",
             "/swapfile",
         ];
+        #[cfg(target_os = "macos")]
+        const ROOTS: &[&str] = &[
+            "/System",
+            "/Library",
+            "/usr",
+            "/private/var",
+            "/opt",
+            "/Applications",
+        ];
+
         let present: Vec<&str> = ROOTS
             .iter()
             .copied()
@@ -193,20 +256,28 @@ pub async fn system_total() -> Result<u64, String> {
         if present.is_empty() {
             return 0;
         }
-        // `du -scx --block-size=1`: summary, grand total, one filesystem, bytes.
+
+        // GNU du reports bytes (`--block-size=1`); BSD du (macOS) only does
+        // 1024-byte blocks (`-k`), so scale there.
+        #[cfg(not(target_os = "macos"))]
+        let (du_args, mult): (&[&str], u64) = (&["-scx", "--block-size=1"], 1);
+        #[cfg(target_os = "macos")]
+        let (du_args, mult): (&[&str], u64) = (&["-scxk"], 1024);
+
         let Ok(out) = std::process::Command::new("du")
-            .args(["-scx", "--block-size=1"])
+            .args(du_args)
             .args(&present)
             .output()
         else {
             return 0;
         };
-        // The last line is "<bytes>\ttotal".
+        // The last line is "<n>\ttotal".
         String::from_utf8_lossy(&out.stdout)
             .lines()
             .last()
             .and_then(|line| line.split_whitespace().next())
             .and_then(|n| n.parse::<u64>().ok())
+            .map(|v| v * mult)
             .unwrap_or(0)
     })
     .await
@@ -233,12 +304,6 @@ pub fn smart_deps_status() -> smartdeps::SmartDepsStatus {
 #[tauri::command]
 pub async fn install_smart_deps() -> Result<InstallReport, String> {
     tauri::async_runtime::spawn_blocking(|| {
-        let Some(manager) = smartdeps::detect_manager() else {
-            return InstallReport {
-                success: false,
-                message: "no supported package manager found".to_string(),
-            };
-        };
         let packages = smartdeps::missing_packages();
         if packages.is_empty() {
             return InstallReport {
@@ -246,7 +311,22 @@ pub async fn install_smart_deps() -> Result<InstallReport, String> {
                 message: "already installed".to_string(),
             };
         }
-        execute::pkexec_install_deps(&manager, &packages)
+        // macOS: Homebrew, user-level (no privilege escalation).
+        #[cfg(target_os = "macos")]
+        {
+            smartdeps::brew_install(&packages)
+        }
+        // Linux: privileged package manager via the pkexec helper.
+        #[cfg(not(target_os = "macos"))]
+        {
+            let Some(manager) = smartdeps::detect_manager() else {
+                return InstallReport {
+                    success: false,
+                    message: "no supported package manager found".to_string(),
+                };
+            };
+            execute::pkexec_install_deps(&manager, &packages)
+        }
     })
     .await
     .map_err(|e| e.to_string())
