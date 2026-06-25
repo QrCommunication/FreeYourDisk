@@ -20,6 +20,8 @@ core-services = { path = "../crates/core-services" }
 core-scan = { path = "../crates/core-scan" }
 sysinfo = "0.39"
 jwalk = { workspace = true }
+libc = "0.2"
+tauri-plugin-global-shortcut = "2"
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -6,6 +6,7 @@
   "nav": {
     "home": "Home",
     "applications": "Applications",
+    "taskmgr": "Task manager",
     "health": "Disk health",
     "settings": "Settings"
   },
@@ -81,6 +82,29 @@
     "action_partial": "{ok} succeeded, {err} failed",
     "action_failed": "Operation failed"
   },
+  "taskmgr": {
+    "subtitle": "Real-time CPU, memory, swap and processes — kill whatever is saturating the machine.",
+    "cpu": "CPU",
+    "temp": "Temperature",
+    "cores": "Logical cores",
+    "ram": "RAM",
+    "swap": "Swap",
+    "load": "Load",
+    "filter": "Filter (name, user, command)…",
+    "restart": "Restart",
+    "terminate": "Terminate",
+    "force": "Force (SIGKILL)",
+    "panic": "Kill biggest hog",
+    "panic_hint": "Force-kills the largest RAM consumer (excluding critical processes)",
+    "col_name": "Process",
+    "col_user": "User",
+    "col_ram": "RAM",
+    "killed": "Process {pid} terminated",
+    "restarted": "Process {pid} restarted",
+    "action_failed": "Action failed",
+    "panic_done": "Killed {name} ({size} freed)",
+    "panic_none": "No process to kill"
+  },
   "health": {
     "subtitle": "Status, performance and SMART for every disk.",
     "system_uptime": "System uptime",
@@ -121,7 +145,11 @@
     "monitor_desc": "Warn you when a disk's free space drops below the threshold.",
     "threshold": "Alert threshold",
     "scheduled_clean": "Scheduled cleanup",
-    "scheduled_clean_desc": "Automatically clean old caches every week."
+    "scheduled_clean_desc": "Automatically clean old caches every week.",
+    "taskmgr_section": "Task manager",
+    "shortcut": "Summon shortcut",
+    "shortcut_desc": "Raises the window onto the task manager, even under heavy load.",
+    "shortcut_recording": "Press the key combo…"
   },
   "lowspace": {
     "title": "Low disk space",

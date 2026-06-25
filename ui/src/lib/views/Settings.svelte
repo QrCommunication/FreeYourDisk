@@ -17,6 +17,38 @@
     { value: "fr", label: "settings.lang_fr" },
     { value: "en", label: "settings.lang_en" },
   ];
+
+  // Global summon shortcut — recorded from the next key combo the user presses.
+  let recording = $state(false);
+
+  function prettyShortcut(accel: string): string {
+    if (!accel) return "—";
+    return accel
+      .split("+")
+      .map((t) => t.replace(/^Key/, "").replace(/^Digit/, ""))
+      .join(" + ");
+  }
+
+  function onKeydown(e: KeyboardEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    // Wait until a non-modifier key is pressed alongside the modifiers.
+    if (["Control", "Alt", "Shift", "Meta"].includes(e.key)) return;
+    const mods: string[] = [];
+    if (e.ctrlKey) mods.push("Ctrl");
+    if (e.altKey) mods.push("Alt");
+    if (e.shiftKey) mods.push("Shift");
+    if (e.metaKey) mods.push("Super");
+    const accel = [...mods, e.code].join("+");
+    recording = false;
+    updateSettings({ shortcut: accel });
+  }
+
+  $effect(() => {
+    if (!recording) return;
+    window.addEventListener("keydown", onKeydown, true);
+    return () => window.removeEventListener("keydown", onKeydown, true);
+  });
 </script>
 
 <div class="mx-auto max-w-3xl px-10 py-8">
@@ -129,6 +161,31 @@
           </div>
         </div>
       {/if}
+    </div>
+  </section>
+
+  <!-- Task manager shortcut -->
+  <section class="mb-8">
+    <h2 class="text-faint mb-3 text-xs font-semibold tracking-wide uppercase">
+      {$_("settings.taskmgr_section")}
+    </h2>
+    <div
+      class="border-line bg-surface flex items-center gap-4 rounded-xl border p-4"
+    >
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-medium">{$_("settings.shortcut")}</p>
+        <p class="text-muted text-xs">{$_("settings.shortcut_desc")}</p>
+      </div>
+      <button
+        class="border-line min-w-44 cursor-pointer rounded-lg border px-4 py-2 text-center text-sm font-medium transition"
+        class:border-accent={recording}
+        class:text-accent={recording}
+        onclick={() => (recording = !recording)}
+      >
+        {recording
+          ? $_("settings.shortcut_recording")
+          : prettyShortcut($settings.shortcut)}
+      </button>
     </div>
   </section>
 

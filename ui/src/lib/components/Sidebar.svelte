@@ -1,18 +1,17 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { _ } from "svelte-i18n";
-  import { House, HardDrives, GearSix, Package } from "phosphor-svelte";
-  import { getVersion } from "@tauri-apps/api/app";
+  import { House, HardDrives, GearSix, Package, Gauge } from "phosphor-svelte";
+  import { api, SERVICES } from "../api";
   import { nav, goTo } from "../stores";
-  import { SERVICES } from "../api";
   import { serviceIcon } from "../icons";
 
-  // Single source of truth: the version comes from Cargo.toml via Tauri,
-  // never hardcoded in the UI.
+  // Single source of truth: the version comes from Cargo.toml via a backend
+  // command, never hardcoded in the UI.
   let version = $state("");
   onMount(async () => {
     try {
-      version = await getVersion();
+      version = await api.appVersion();
     } catch {
       /* not running under Tauri (e.g. browser preview) */
     }
@@ -100,6 +99,17 @@
         weight={$nav === "applications" ? "fill" : "regular"}
       />
       {$_("nav.applications")}
+    </button>
+    <button
+      class="group flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors"
+      class:bg-accent-soft={$nav === "taskmgr"}
+      class:text-accent={$nav === "taskmgr"}
+      class:text-muted={$nav !== "taskmgr"}
+      class:hover:text-ink={$nav !== "taskmgr"}
+      onclick={() => goTo("taskmgr")}
+    >
+      <Gauge size={18} weight={$nav === "taskmgr" ? "fill" : "regular"} />
+      {$_("nav.taskmgr")}
     </button>
     <button
       class="group flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors"

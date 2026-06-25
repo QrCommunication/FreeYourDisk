@@ -2,10 +2,10 @@
   import { onMount } from "svelte";
   import { isLoading } from "svelte-i18n";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { nav } from "./lib/stores";
+  import { nav, goTo } from "./lib/stores";
   import { initSettings } from "./lib/settings";
   import { restoreHomeCache, runAllScans } from "./lib/scan";
-  import type { ServiceId } from "./lib/api";
+  import { api, type ServiceId } from "./lib/api";
   import Sidebar from "./lib/components/Sidebar.svelte";
   import Toasts from "./lib/components/Toasts.svelte";
   import LowSpaceModal from "./lib/components/LowSpaceModal.svelte";
@@ -14,6 +14,7 @@
   import Settings from "./lib/views/Settings.svelte";
   import ServiceView from "./lib/views/ServiceView.svelte";
   import Applications from "./lib/views/Applications.svelte";
+  import TaskManager from "./lib/views/TaskManager.svelte";
   import TrayWidget from "./lib/views/TrayWidget.svelte";
 
   let label = "main";
@@ -27,6 +28,9 @@
   onMount(async () => {
     await initSettings();
     if (isTray) return;
+    // The global hotkey raises the window straight into the task manager.
+    // App-lifetime listener — no teardown needed.
+    void api.onSummon(() => goTo("taskmgr"));
     // Show last results instantly, then refresh in the background on startup.
     const hadCache = await restoreHomeCache();
     void runAllScans(hadCache);
@@ -44,6 +48,8 @@
           <Home />
         {:else if $nav === "applications"}
           <Applications />
+        {:else if $nav === "taskmgr"}
+          <TaskManager />
         {:else if $nav === "health"}
           <Health />
         {:else if $nav === "settings"}

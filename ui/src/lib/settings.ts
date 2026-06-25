@@ -8,6 +8,7 @@ const DEFAULTS: Settings = {
   autostart: false,
   monitor_enabled: true,
   monitor_threshold: 5,
+  shortcut: "Ctrl+Alt+Delete",
 };
 
 /** The persisted settings (optimistically updated). */

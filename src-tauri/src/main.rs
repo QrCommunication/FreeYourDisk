@@ -13,8 +13,10 @@ mod health;
 mod monitor;
 mod services;
 mod settings;
+mod shortcut;
 mod snapshot;
 mod state;
+mod taskmgr;
 mod tray;
 
 use state::AppState;
@@ -26,12 +28,18 @@ fn main() {
         std::process::exit(headless::run(&args));
     }
 
+    // Stay alive and responsive under memory pressure (best effort).
+    taskmgr::raise_priority();
+
     tauri::Builder::default()
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(AppState::new())
         .setup(|app| {
             core_scan::cache::load(&settings::config_dir().join("dir-cache.json"));
             tray::setup(app)?;
             monitor::start(app.handle().clone());
+            // Register the user's summon hotkey for the task manager.
+            shortcut::register(app.handle(), &settings::load().shortcut);
             Ok(())
         })
         .on_window_event(|window, event| match event {
@@ -58,12 +66,18 @@ fn main() {
             commands::file_types,
             commands::home_total,
             commands::system_total,
+            commands::mem_stats,
+            commands::process_list,
+            commands::kill_process,
+            commands::restart_process,
+            commands::panic_kill,
             commands::list_applications,
             commands::app_updates,
             commands::uninstall_apps,
             commands::update_apps,
             commands::home_cache_load,
             commands::home_cache_save,
+            commands::app_version,
             commands::get_settings,
             commands::set_settings,
         ])

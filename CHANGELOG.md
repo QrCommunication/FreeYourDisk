@@ -4,6 +4,27 @@ All notable changes to FreeYourDisk are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-06-25
+
+### Added
+
+- **Task manager tab** (reimplements the core of the standalone `mem-guard`):
+  - Real-time **CPU / RAM / swap** graph, plus CPU, temperature, RAM, swap and
+    load gauges.
+  - A **per-core utilization heatmap** (logical processors, green→red).
+  - **CPU temperature** from the package/core sensors (Intel/AMD).
+  - Sortable, filterable **process table** (CPU %, RAM %, RAM, user, PID).
+  - Crisis actions: **terminate** (SIGTERM), **force** (SIGKILL), **restart**,
+    and **panic-kill** the largest non-critical memory hog.
+  - A **configurable global summon hotkey** (default `Ctrl+Alt+Delete`) that
+    raises the window onto the task manager; the app raises its own priority and
+    requests OOM immunity to stay responsive under memory pressure.
+
+### Fixed
+
+- The app version is now served by a backend command sourced from `Cargo.toml`,
+  so the footer shows the real version regardless of core-plugin ACL.
+
 ## [0.3.0] - 2026-06-25
 
 A major release that turns the per-service tool into a unified, accurate disk
@@ -62,5 +83,6 @@ dashboard.
   for privileged cleanup.
 - System tray icon with a disk-usage popover widget.
 
+[0.4.0]: https://github.com/QrCommunication/FreeYourDisk/releases/tag/v0.4.0
 [0.3.0]: https://github.com/QrCommunication/FreeYourDisk/releases/tag/v0.3.0
 [0.1.0]: https://github.com/QrCommunication/FreeYourDisk/releases/tag/v0.1.0

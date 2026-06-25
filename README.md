@@ -64,6 +64,16 @@ Per-disk SMART (health, power-on hours, temperature) via **nvme-cli** for NVMe
 drives (or `smartctl` for SATA), plus **real-time read/write throughput graphs**
 and system uptime.
 
+### Task manager
+
+A built-in crisis process manager: a **real-time CPU / RAM / swap graph**, a
+**per-core utilization heatmap**, CPU **temperature**, and a sortable, filterable
+**process table** with terminate / force-kill / restart and a one-click
+**panic-kill** of the biggest non-critical memory hog. A **configurable global
+hotkey** (default `Ctrl+Alt+Delete`) raises the window onto the task manager; the
+app raises its own priority and requests OOM immunity to stay responsive under
+memory pressure.
+
 ### Settings, scheduling & monitoring
 
 - **Light / dark / system** theme and **French / English / system** language.

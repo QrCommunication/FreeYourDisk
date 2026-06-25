@@ -6,6 +6,7 @@
   "nav": {
     "home": "Accueil",
     "applications": "Applications",
+    "taskmgr": "Gestionnaire de tâches",
     "health": "Santé des disques",
     "settings": "Réglages"
   },
@@ -81,6 +82,29 @@
     "action_partial": "{ok} réussie(s), {err} échec(s)",
     "action_failed": "Échec de l'opération"
   },
+  "taskmgr": {
+    "subtitle": "CPU, mémoire, swap et processus en temps réel — tuez un process qui sature la machine.",
+    "cpu": "CPU",
+    "temp": "Température",
+    "cores": "Cœurs logiques",
+    "ram": "RAM",
+    "swap": "Swap",
+    "load": "Charge",
+    "filter": "Filtrer (nom, utilisateur, commande)…",
+    "restart": "Redémarrer",
+    "terminate": "Terminer",
+    "force": "Forcer (SIGKILL)",
+    "panic": "Tuer le plus gros",
+    "panic_hint": "Force-tue le plus gros consommateur de RAM (hors process critiques)",
+    "col_name": "Processus",
+    "col_user": "Utilisateur",
+    "col_ram": "RAM",
+    "killed": "Process {pid} terminé",
+    "restarted": "Process {pid} redémarré",
+    "action_failed": "Action impossible",
+    "panic_done": "{name} tué ({size} libérés)",
+    "panic_none": "Aucun process à tuer"
+  },
   "health": {
     "subtitle": "État, performances et SMART de chaque disque.",
     "system_uptime": "Disponibilité du système",
@@ -121,7 +145,11 @@
     "monitor_desc": "Vous prévenir quand l'espace libre d'un disque passe sous le seuil.",
     "threshold": "Seuil d'alerte",
     "scheduled_clean": "Nettoyage planifié",
-    "scheduled_clean_desc": "Nettoyer automatiquement les vieux caches chaque semaine."
+    "scheduled_clean_desc": "Nettoyer automatiquement les vieux caches chaque semaine.",
+    "taskmgr_section": "Gestionnaire de tâches",
+    "shortcut": "Raccourci d'ouverture",
+    "shortcut_desc": "Fait surgir la fenêtre sur le gestionnaire de tâches, même sous forte charge.",
+    "shortcut_recording": "Appuyez sur la combinaison…"
   },
   "lowspace": {
     "title": "Espace disque faible",

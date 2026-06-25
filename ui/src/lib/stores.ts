@@ -1,7 +1,13 @@
 import { writable } from "svelte/store";
 import type { ServiceId } from "./api";
 
-export type Nav = "home" | ServiceId | "applications" | "health" | "settings";
+export type Nav =
+  | "home"
+  | ServiceId
+  | "applications"
+  | "taskmgr"
+  | "health"
+  | "settings";
 
 /** Active top-level section. */
 export const nav = writable<Nav>("home");

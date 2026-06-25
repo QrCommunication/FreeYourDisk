@@ -69,6 +69,16 @@ SMART par disque (état, heures d'allumage, température) via **nvme-cli** pour 
 disques NVMe (ou `smartctl` pour le SATA), plus des **graphes de débit
 lecture/écriture en temps réel** et la disponibilité du système.
 
+### Gestionnaire de tâches
+
+Un gestionnaire de processus de crise intégré : un **graphe CPU / RAM / swap en
+temps réel**, une **heatmap d'utilisation par cœur**, la **température** CPU, et
+une **table de processus** triable/filtrable avec terminer / forcer / redémarrer
+et un **« tuer le plus gros »** en un clic (plus gros consommateur de RAM hors
+process critiques). Un **raccourci global configurable** (défaut `Ctrl+Alt+Suppr`)
+fait surgir la fenêtre sur le gestionnaire ; l'app augmente sa priorité et demande
+l'immunité OOM pour rester réactive sous pression mémoire.
+
 ### Réglages, planification & surveillance
 
 - Thème **clair / sombre / système** et langue **français / anglais / système**.

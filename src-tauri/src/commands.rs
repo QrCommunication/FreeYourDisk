@@ -7,7 +7,7 @@
 
 use crate::services::make_service;
 use crate::state::AppState;
-use crate::{applications, execute, filetypes, health, settings, snapshot};
+use crate::{applications, execute, filetypes, health, settings, snapshot, taskmgr};
 use core_ipc::{DeletionPlan, ExecutionReport, MountUsage, ScanResult, ServiceId, SmartInfo};
 use serde::Serialize;
 use tauri::State;
@@ -266,15 +266,63 @@ pub async fn update_apps(ids: Vec<String>) -> Result<applications::AppActionRepo
         .map_err(|e| e.to_string())
 }
 
+/// Live memory/swap/load telemetry for the task-manager graph (cheap, polled).
+#[tauri::command]
+pub fn mem_stats() -> taskmgr::MemStats {
+    taskmgr::mem_stats()
+}
+
+/// Full process inventory (off the main thread — refreshing all processes is
+/// non-trivial), largest memory first.
+#[tauri::command]
+pub async fn process_list() -> Result<Vec<taskmgr::ProcInfo>, String> {
+    tauri::async_runtime::spawn_blocking(taskmgr::process_list)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Terminate (SIGTERM) or force-kill (SIGKILL) a process.
+#[tauri::command]
+pub fn kill_process(pid: u32, force: bool) -> bool {
+    taskmgr::kill_process(pid, force)
+}
+
+/// Restart a process (capture its command line, kill it, relaunch).
+#[tauri::command]
+pub async fn restart_process(pid: u32) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || taskmgr::restart_process(pid))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Emergency: force-kill the largest non-critical memory consumer.
+#[tauri::command]
+pub async fn panic_kill() -> Result<Option<taskmgr::ProcInfo>, String> {
+    tauri::async_runtime::spawn_blocking(taskmgr::panic_kill)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// The app version, sourced from Cargo.toml (single source of truth). Served as
+/// an app command so it never depends on the core `app:version` ACL permission.
+#[tauri::command]
+pub fn app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
 /// Read the persisted user settings.
 #[tauri::command]
 pub fn get_settings() -> settings::Settings {
     settings::load()
 }
 
-/// Persist user settings (also applies the autostart side effect).
+/// Persist user settings (also applies autostart + re-registers the hotkey).
 #[tauri::command]
-pub fn set_settings(settings: settings::Settings) -> Result<settings::Settings, String> {
+pub fn set_settings(
+    app: tauri::AppHandle,
+    settings: settings::Settings,
+) -> Result<settings::Settings, String> {
     crate::settings::save(&settings)?;
+    crate::shortcut::register(&app, &settings.shortcut);
     Ok(settings)
 }

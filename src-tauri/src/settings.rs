@@ -18,6 +18,13 @@ pub struct Settings {
     pub monitor_enabled: bool,
     /// Alert when free space on a mount drops below this percentage.
     pub monitor_threshold: u8,
+    /// Global hotkey that summons the window + task manager (Tauri accelerator).
+    #[serde(default = "default_shortcut")]
+    pub shortcut: String,
+}
+
+fn default_shortcut() -> String {
+    "Ctrl+Alt+Delete".to_string()
 }
 
 impl Default for Settings {
@@ -28,6 +35,7 @@ impl Default for Settings {
             autostart: false,
             monitor_enabled: true,
             monitor_threshold: 5,
+            shortcut: default_shortcut(),
         }
     }
 }

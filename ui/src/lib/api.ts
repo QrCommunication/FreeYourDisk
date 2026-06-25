@@ -121,6 +121,30 @@ export interface Settings {
   autostart: boolean;
   monitor_enabled: boolean;
   monitor_threshold: number;
+  shortcut: string;
+}
+
+export interface ProcInfo {
+  pid: number;
+  name: string;
+  cpu: number;
+  mem_bytes: number;
+  mem_pct: number;
+  user: string;
+  cmd: string;
+}
+
+export interface MemStats {
+  mem_total: number;
+  mem_used: number;
+  swap_total: number;
+  swap_used: number;
+  cpu_total: number;
+  cpus: number[];
+  cpu_temp: number | null;
+  load1: number;
+  load5: number;
+  load15: number;
 }
 
 export interface LowSpaceAlert {
@@ -160,9 +184,19 @@ export const api = {
     invoke<AppActionReport>("update_apps", { ids }),
   homeCacheLoad: () => invoke<string | null>("home_cache_load"),
   homeCacheSave: (data: string) => invoke<void>("home_cache_save", { data }),
+  appVersion: () => invoke<string>("app_version"),
   getSettings: () => invoke<Settings>("get_settings"),
   setSettings: (settings: Settings) =>
     invoke<Settings>("set_settings", { settings }),
   onLowSpace: (handler: (alert: LowSpaceAlert) => void): Promise<UnlistenFn> =>
     listen<LowSpaceAlert>("low-space", (event) => handler(event.payload)),
+  // Task manager
+  memStats: () => invoke<MemStats>("mem_stats"),
+  processList: () => invoke<ProcInfo[]>("process_list"),
+  killProcess: (pid: number, force: boolean) =>
+    invoke<boolean>("kill_process", { pid, force }),
+  restartProcess: (pid: number) => invoke<void>("restart_process", { pid }),
+  panicKill: () => invoke<ProcInfo | null>("panic_kill"),
+  onSummon: (handler: () => void): Promise<UnlistenFn> =>
+    listen("summon-taskmgr", () => handler()),
 };

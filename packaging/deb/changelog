@@ -1,3 +1,13 @@
+free-your-disk (0.4.0) unstable; urgency=low
+
+  * Task manager tab: real-time CPU/RAM/swap graph, per-core utilization
+    heatmap, CPU temperature, sortable/filterable process table with
+    terminate/force/restart/panic-kill, and a configurable summon hotkey
+    (default Ctrl+Alt+Delete). Raises its own priority + OOM immunity.
+  * App version is served from Cargo.toml (single source) via a backend command.
+
+ -- rony <rony@rlconseil.net>  Thu, 25 Jun 2026 22:00:00 +0000
+
 free-your-disk (0.3.0) unstable; urgency=low
 
   * Unified home dashboard with a 3D usage donut and one-click scan.
