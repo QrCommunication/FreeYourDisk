@@ -50,28 +50,35 @@
     ],
     "category": "Utility",
     "shortDescription": "Safe disk cleanup utility",
-    "longDescription": "Scan your disk and safely clean temporary files, large files, stale git worktrees and developer caches, with a modern visual dashboard.",
+    "longDescription": "Safely clean temporary files, large files, git worktrees and dev caches.",
     "linux": {
       "deb": {
         "depends": [
+          "libc6",
           "pkexec",
           "git",
           "libayatana-appindicator3-1"
         ],
         "files": {
           "/usr/lib/freeyourdisk/freeyourdisk-helper": "../target/release/freeyourdisk-helper",
-          "/usr/share/polkit-1/actions/io.freeyourdisk.policy": "../packaging/io.freeyourdisk.policy"
-        }
+          "/usr/share/polkit-1/actions/io.freeyourdisk.policy": "../packaging/io.freeyourdisk.policy",
+          "/usr/share/doc/free-your-disk/copyright": "../packaging/deb/copyright",
+          "/usr/share/doc/free-your-disk/changelog.gz": "../packaging/deb/changelog.gz",
+          "/usr/share/man/man1/freeyourdisk.1.gz": "../packaging/deb/freeyourdisk.1.gz"
+        },
+        "section": "utils",
+        "priority": "optional"
       },
       "rpm": {
         "depends": [
           "pkexec",
-          "git",
-          "libayatana-appindicator3"
+          "git"
         ],
         "files": {
           "/usr/lib/freeyourdisk/freeyourdisk-helper": "../target/release/freeyourdisk-helper",
-          "/usr/share/polkit-1/actions/io.freeyourdisk.policy": "../packaging/io.freeyourdisk.policy"
+          "/usr/share/polkit-1/actions/io.freeyourdisk.policy": "../packaging/io.freeyourdisk.policy",
+          "/usr/share/doc/free-your-disk/copyright": "../packaging/deb/copyright",
+          "/usr/share/man/man1/freeyourdisk.1.gz": "../packaging/deb/freeyourdisk.1.gz"
         }
       }
     }

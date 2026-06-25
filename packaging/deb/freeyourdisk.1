@@ -1,0 +1,26 @@
+.TH FREEYOURDISK 1 "2026-06-25" "0.1.0" "FreeYourDisk Manual"
+.SH NAME
+freeyourdisk \- safe disk cleanup utility
+.SH SYNOPSIS
+.B freeyourdisk
+.RI [ --headless ]
+.SH DESCRIPTION
+.B FreeYourDisk
+scans your disk and safely cleans temporary files, large files, stale git
+worktrees and developer caches, with a modern visual dashboard.
+.PP
+Scans are read-only. Deletions are previewed (dry-run) and go to the
+recoverable XDG trash by default; permanent deletion is an explicit opt-in.
+Actions that require administrator rights are delegated to a minimal helper
+through Polkit.
+.SH OPTIONS
+.TP
+.B --headless
+Run a non-interactive cleanup of temporary files (used by the optional
+systemd user timer).
+.SH AUTHOR
+rony <rony@rlconseil.net>
+.SH LICENSE
+GPL-3.0-or-later.
+.SH SEE ALSO
+Project page: https://github.com/QrCommunication/FreeYourDisk

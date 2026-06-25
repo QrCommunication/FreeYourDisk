@@ -1,0 +1,10 @@
+free-your-disk (0.1.0) unstable; urgency=low
+
+  * Initial release.
+  * Disk scanning and safe cleanup: temporary files, largest files, git
+    worktrees and developer caches.
+  * Recoverable-by-default deletion (XDG trash), dry-run preview, Polkit
+    helper for privileged cleanup.
+  * System tray icon with a disk-usage popover widget.
+
+ -- rony <rony@rlconseil.net>  Thu, 25 Jun 2026 12:00:00 +0000
