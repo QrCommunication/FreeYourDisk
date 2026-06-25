@@ -12,12 +12,28 @@ use tauri::{
     App, AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewWindow,
 };
 
+/// True if the system locale is French (the native tray menu is localised
+/// FR/EN; the web UI handles the rest).
+fn is_french() -> bool {
+    std::env::var("LC_MESSAGES")
+        .or_else(|_| std::env::var("LANG"))
+        .or_else(|_| std::env::var("LANGUAGE"))
+        .map(|lang| lang.to_lowercase().starts_with("fr"))
+        .unwrap_or(false)
+}
+
 /// Build the tray icon and its menu.
 pub fn setup(app: &App) -> tauri::Result<()> {
-    let summary = MenuItem::with_id(app, "summary", "Résumé de l'espace", true, None::<&str>)?;
-    let open = MenuItem::with_id(app, "open", "Ouvrir FreeYourDisk", true, None::<&str>)?;
+    let (summary_label, open_label, quit_label) = if is_french() {
+        ("Résumé de l'espace", "Ouvrir FreeYourDisk", "Quitter")
+    } else {
+        ("Disk usage summary", "Open FreeYourDisk", "Quit")
+    };
+
+    let summary = MenuItem::with_id(app, "summary", summary_label, true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", open_label, true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Quitter", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", quit_label, true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&summary, &open, &sep, &quit])?;
 
     TrayIconBuilder::with_id("main-tray")

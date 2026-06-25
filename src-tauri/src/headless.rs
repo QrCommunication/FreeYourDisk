@@ -73,14 +73,24 @@ fn humanize(bytes: u64) -> String {
     }
 }
 
+fn is_french() -> bool {
+    std::env::var("LC_MESSAGES")
+        .or_else(|_| std::env::var("LANG"))
+        .or_else(|_| std::env::var("LANGUAGE"))
+        .map(|lang| lang.to_lowercase().starts_with("fr"))
+        .unwrap_or(false)
+}
+
 fn notify(freed_bytes: u64, count: usize) {
+    let body = if is_french() {
+        format!("{} libérés · {count} éléments", humanize(freed_bytes))
+    } else {
+        format!("{} freed · {count} items", humanize(freed_bytes))
+    };
     let _ = Command::new("notify-send")
         .arg("--app-name=FreeYourDisk")
         .arg("FreeYourDisk")
-        .arg(format!(
-            "{} libérés · {count} éléments",
-            humanize(freed_bytes)
-        ))
+        .arg(body)
         .status();
 }
 
