@@ -46,7 +46,7 @@ jobs:
         run: cargo tauri build
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             target/release/bundle/deb/*.deb
