@@ -64,7 +64,9 @@
           "/usr/share/polkit-1/actions/io.freeyourdisk.policy": "../packaging/io.freeyourdisk.policy",
           "/usr/share/doc/free-your-disk/copyright": "../packaging/deb/copyright",
           "/usr/share/doc/free-your-disk/changelog.gz": "../packaging/deb/changelog.gz",
-          "/usr/share/man/man1/freeyourdisk.1.gz": "../packaging/deb/freeyourdisk.1.gz"
+          "/usr/share/man/man1/freeyourdisk.1.gz": "../packaging/deb/freeyourdisk.1.gz",
+          "/usr/lib/systemd/user/freeyourdisk.service": "../packaging/systemd/freeyourdisk.service",
+          "/usr/lib/systemd/user/freeyourdisk.timer": "../packaging/systemd/freeyourdisk.timer"
         },
         "section": "utils",
         "priority": "optional"
@@ -78,7 +80,9 @@
           "/usr/lib/freeyourdisk/freeyourdisk-helper": "../target/release/freeyourdisk-helper",
           "/usr/share/polkit-1/actions/io.freeyourdisk.policy": "../packaging/io.freeyourdisk.policy",
           "/usr/share/doc/free-your-disk/copyright": "../packaging/deb/copyright",
-          "/usr/share/man/man1/freeyourdisk.1.gz": "../packaging/deb/freeyourdisk.1.gz"
+          "/usr/share/man/man1/freeyourdisk.1.gz": "../packaging/deb/freeyourdisk.1.gz",
+          "/usr/lib/systemd/user/freeyourdisk.service": "../packaging/systemd/freeyourdisk.service",
+          "/usr/lib/systemd/user/freeyourdisk.timer": "../packaging/systemd/freeyourdisk.timer"
         }
       }
     }

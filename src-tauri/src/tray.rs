@@ -47,7 +47,9 @@ fn show_main(app: &AppHandle) {
 
 /// Show or hide the popover widget window.
 fn toggle_popover(app: &AppHandle) {
-    let Some(win) = app.get_webview_window("tray") else { return };
+    let Some(win) = app.get_webview_window("tray") else {
+        return;
+    };
     if win.is_visible().unwrap_or(false) {
         let _ = win.hide();
     } else {
@@ -60,7 +62,10 @@ fn toggle_popover(app: &AppHandle) {
 /// Anchor the popover to the bottom-right of the primary monitor (above a
 /// typical taskbar).
 fn position_popover(win: &WebviewWindow) {
-    let size = win.outer_size().unwrap_or(PhysicalSize { width: 320, height: 470 });
+    let size = win.outer_size().unwrap_or(PhysicalSize {
+        width: 320,
+        height: 470,
+    });
     if let Ok(Some(monitor)) = win.primary_monitor() {
         let m = monitor.size();
         let origin = monitor.position();

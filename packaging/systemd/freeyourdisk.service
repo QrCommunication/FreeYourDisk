@@ -1,0 +1,7 @@
+[Unit]
+Description=FreeYourDisk scheduled cache cleanup
+Documentation=https://github.com/QrCommunication/FreeYourDisk
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/freeyourdisk --headless --service=temp --apply

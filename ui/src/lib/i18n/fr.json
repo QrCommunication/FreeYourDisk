@@ -72,5 +72,10 @@
     "occupied": "Espace occupé",
     "open": "Ouvrir FreeYourDisk",
     "clean": "Nettoyer"
+  },
+  "schedule": {
+    "title": "Nettoyage planifié",
+    "desc": "Nettoyer automatiquement les vieux caches chaque semaine.",
+    "failed": "Impossible de modifier la planification"
   }
 }

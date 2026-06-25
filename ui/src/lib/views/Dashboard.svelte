@@ -6,6 +6,7 @@
   import { humanizeBytes, usedPercent } from "../format";
   import DiskDonut from "../components/DiskDonut.svelte";
   import ServiceCard from "../components/ServiceCard.svelte";
+  import ScheduleToggle from "../components/ScheduleToggle.svelte";
   import StateBlock from "../components/StateBlock.svelte";
 
   let status = $state<"loading" | "error" | "data">("loading");
@@ -103,6 +104,10 @@
       {#each SERVICES as id (id)}
         <ServiceCard {id} onopen={() => goService(id)} />
       {/each}
+    </div>
+
+    <div class="mt-3">
+      <ScheduleToggle />
     </div>
   {/if}
 </div>

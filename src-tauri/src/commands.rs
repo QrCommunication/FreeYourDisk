@@ -55,3 +55,28 @@ pub fn disk_usage() -> Vec<MountUsage> {
         })
         .collect()
 }
+
+/// Whether the weekly cleanup systemd user timer is enabled.
+#[tauri::command]
+pub fn schedule_enabled() -> bool {
+    std::process::Command::new("systemctl")
+        .args(["--user", "is-enabled", "freeyourdisk.timer"])
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
+/// Enable or disable (and start/stop) the weekly cleanup timer.
+#[tauri::command]
+pub fn set_schedule(enabled: bool) -> Result<bool, String> {
+    let action = if enabled { "enable" } else { "disable" };
+    let out = std::process::Command::new("systemctl")
+        .args(["--user", action, "--now", "freeyourdisk.timer"])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(enabled)
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
+}

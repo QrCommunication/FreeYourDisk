@@ -62,4 +62,7 @@ export const api = {
     invoke<DeletionPlan>("preview", { service, selection }),
   execute: (plan: DeletionPlan) => invoke<ExecutionReport>("execute", { plan }),
   diskUsage: () => invoke<MountUsage[]>("disk_usage"),
+  scheduleEnabled: () => invoke<boolean>("schedule_enabled"),
+  setSchedule: (enabled: boolean) =>
+    invoke<boolean>("set_schedule", { enabled }),
 };

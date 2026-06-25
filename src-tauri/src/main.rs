@@ -43,6 +43,8 @@ fn main() {
             commands::preview,
             commands::execute,
             commands::disk_usage,
+            commands::schedule_enabled,
+            commands::set_schedule,
         ])
         .run(tauri::generate_context!())
         .expect("error while running FreeYourDisk");

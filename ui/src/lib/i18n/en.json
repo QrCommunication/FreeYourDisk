@@ -69,5 +69,10 @@
     "occupied": "Occupied space",
     "open": "Open FreeYourDisk",
     "clean": "Clean up"
+  },
+  "schedule": {
+    "title": "Scheduled cleanup",
+    "desc": "Automatically clean old cache files every week.",
+    "failed": "Could not change the schedule"
   }
 }
