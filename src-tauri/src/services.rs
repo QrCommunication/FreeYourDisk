@@ -3,7 +3,9 @@
 
 use crate::state::Config;
 use core_ipc::ServiceId;
-use core_services::{BigFilesService, DevCacheService, GitService, Service, TempService};
+use core_services::{
+    AppCacheService, BigFilesService, DevCacheService, GitService, Service, TempService,
+};
 
 pub fn make_service(id: ServiceId, cfg: &Config) -> Box<dyn Service> {
     match id {
@@ -14,5 +16,6 @@ pub fn make_service(id: ServiceId, cfg: &Config) -> Box<dyn Service> {
         }),
         ServiceId::GitRepos => Box::new(GitService::new(cfg.search_root.clone())),
         ServiceId::DevCache => Box::new(DevCacheService::new(cfg.search_root.clone())),
+        ServiceId::AppCache => Box::new(AppCacheService::new(cfg.home.clone())),
     }
 }

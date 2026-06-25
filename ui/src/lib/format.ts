@@ -29,3 +29,18 @@ export function usedPercent(used: number, total: number): number {
   if (total <= 0) return 0;
   return Math.max(0, Math.min(100, (used / total) * 100));
 }
+
+/** Compact uptime from seconds, e.g. 93600 -> "1d 2h". */
+export function humanizeUptime(secs: number): string {
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+/** Throughput in B/s -> "12.4 MB/s". */
+export function humanizeRate(bytesPerSec: number): string {
+  return `${humanizeBytes(Math.max(0, bytesPerSec))}/s`;
+}

@@ -2,27 +2,76 @@
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
 
-/* Design tokens — slate-950 base, single teal accent, rose danger. */
+/* dark: utilities resolve against a `.dark` class on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Semantic tokens resolve to runtime CSS vars so the theme can switch live. */
 @theme {
-  --color-base: #0b0e14;
-  --color-surface: #11151b;
-  --color-elevated: #161c25;
-  --color-line: #1f2630;
-  --color-ink: #e6edf3;
-  --color-muted: #8b97a5;
-  --color-faint: #5b6573;
-  --color-accent: #2dd4bf;
-  --color-accent-ink: #0b0e14;
-  --color-accent-soft: #0f3d39;
-  --color-danger: #fb7185;
-  --color-danger-soft: #4c1d24;
-  --color-warn: #fbbf24;
+  --color-base: var(--c-base);
+  --color-surface: var(--c-surface);
+  --color-elevated: var(--c-elevated);
+  --color-line: var(--c-line);
+  --color-ink: var(--c-ink);
+  --color-muted: var(--c-muted);
+  --color-faint: var(--c-faint);
+  --color-accent: var(--c-accent);
+  --color-accent-ink: var(--c-accent-ink);
+  --color-accent-soft: var(--c-accent-soft);
+  --color-savings: var(--c-savings);
+  --color-savings-soft: var(--c-savings-soft);
+  --color-freed: var(--c-freed);
+  --color-freed-soft: var(--c-freed-soft);
+  --color-danger: var(--c-danger);
+  --color-danger-soft: var(--c-danger-soft);
 
   --font-sans: "Geist Variable", system-ui, sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, monospace;
 
   --radius-lg: 0.9rem;
   --radius-xl: 1.25rem;
+  --radius-2xl: 1.75rem;
+}
+
+/* Light palette (default) — off-white base, darker accent for contrast. */
+:root {
+  --c-base: #f4f6f9;
+  --c-surface: #ffffff;
+  --c-elevated: #ffffff;
+  --c-line: #e3e8ef;
+  --c-ink: #0f172a;
+  --c-muted: #51607a;
+  --c-faint: #8893a4;
+  --c-accent: #0d9488;
+  --c-accent-ink: #ffffff;
+  --c-accent-soft: #d6f3ee;
+  --c-savings: #d97706;
+  --c-savings-soft: #fceccd;
+  --c-freed: #059669;
+  --c-freed-soft: #d2f2e4;
+  --c-danger: #e11d48;
+  --c-danger-soft: #fbe0e6;
+  color-scheme: light;
+}
+
+/* Dark palette. */
+.dark {
+  --c-base: #0a0d12;
+  --c-surface: #11151c;
+  --c-elevated: #171d27;
+  --c-line: #232c38;
+  --c-ink: #e7eef5;
+  --c-muted: #93a0b0;
+  --c-faint: #5f6b7a;
+  --c-accent: #2dd4bf;
+  --c-accent-ink: #04110f;
+  --c-accent-soft: #0c352f;
+  --c-savings: #fbbf24;
+  --c-savings-soft: #3a2c08;
+  --c-freed: #34d399;
+  --c-freed-soft: #0a3026;
+  --c-danger: #fb7185;
+  --c-danger-soft: #45151f;
+  color-scheme: dark;
 }
 
 @layer base {
@@ -38,6 +87,9 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
+    transition:
+      background 0.3s ease,
+      color 0.3s ease;
   }
 
   ::selection {
@@ -48,6 +100,7 @@
   .nums {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
   }
 
   ::-webkit-scrollbar {
@@ -70,4 +123,19 @@
       transition-duration: 0.01ms !important;
     }
   }
+}
+
+/* Soft staggered entrance for grids/lists. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.rise {
+  animation: rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 }

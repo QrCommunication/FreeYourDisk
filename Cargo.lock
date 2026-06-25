@@ -385,7 +385,7 @@ dependencies = [
 
 [[package]]
 name = "core-ipc"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -393,16 +393,18 @@ dependencies = [
 
 [[package]]
 name = "core-scan"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "jwalk",
  "rayon",
+ "serde",
+ "serde_json",
  "tempfile",
 ]
 
 [[package]]
 name = "core-services"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "core-ipc",
  "core-scan",
@@ -412,7 +414,7 @@ dependencies = [
 
 [[package]]
 name = "core-trash"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "core-ipc",
  "tempfile",
@@ -905,11 +907,13 @@ dependencies = [
 
 [[package]]
 name = "freeyourdisk"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "core-ipc",
+ "core-scan",
  "core-services",
  "core-trash",
+ "jwalk",
  "serde",
  "serde_json",
  "sysinfo",
@@ -920,7 +924,7 @@ dependencies = [
 
 [[package]]
 name = "freeyourdisk-helper"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "core-ipc",
  "core-trash",

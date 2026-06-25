@@ -1,11 +1,22 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { _ } from "svelte-i18n";
-  import { House } from "phosphor-svelte";
-  import { view, goDashboard, goService } from "../stores";
+  import { House, HardDrives, GearSix, Package } from "phosphor-svelte";
+  import { getVersion } from "@tauri-apps/api/app";
+  import { nav, goTo } from "../stores";
   import { SERVICES } from "../api";
   import { serviceIcon } from "../icons";
 
-  const current = $derived($view);
+  // Single source of truth: the version comes from Cargo.toml via Tauri,
+  // never hardcoded in the UI.
+  let version = $state("");
+  onMount(async () => {
+    try {
+      version = await getVersion();
+    } catch {
+      /* not running under Tauri (e.g. browser preview) */
+    }
+  });
 </script>
 
 <aside class="bg-surface border-line flex w-60 shrink-0 flex-col border-r">
@@ -16,7 +27,7 @@
         cy="12"
         r="8"
         fill="none"
-        stroke="#1f2630"
+        stroke="var(--c-line)"
         stroke-width="3.5"
       />
       <circle
@@ -24,7 +35,7 @@
         cy="12"
         r="8"
         fill="none"
-        stroke="#2dd4bf"
+        stroke="var(--c-accent)"
         stroke-width="3.5"
         stroke-dasharray="36 50"
         stroke-linecap="round"
@@ -39,19 +50,17 @@
     </div>
   </div>
 
-  <nav class="flex flex-col gap-0.5 px-3 py-2">
+  <nav class="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-2">
     <button
-      class="group flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors"
-      class:bg-accent-soft={current.kind === "dashboard"}
-      class:text-accent={current.kind === "dashboard"}
-      class:text-muted={current.kind !== "dashboard"}
-      onclick={goDashboard}
+      class="group flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors"
+      class:bg-accent-soft={$nav === "home"}
+      class:text-accent={$nav === "home"}
+      class:text-muted={$nav !== "home"}
+      class:hover:text-ink={$nav !== "home"}
+      onclick={() => goTo("home")}
     >
-      <House
-        size={18}
-        weight={current.kind === "dashboard" ? "fill" : "regular"}
-      />
-      {$_("nav.dashboard")}
+      <House size={18} weight={$nav === "home" ? "fill" : "regular"} />
+      {$_("nav.home")}
     </button>
 
     <div class="text-faint px-3 pt-4 pb-1 text-[11px] tracking-wider uppercase">
@@ -60,19 +69,63 @@
 
     {#each SERVICES as id (id)}
       {@const Icon = serviceIcon[id]}
-      {@const active = current.kind === "service" && current.id === id}
+      {@const active = $nav === id}
       <button
         class="group flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors"
         class:bg-accent-soft={active}
         class:text-accent={active}
         class:text-muted={!active}
-        onclick={() => goService(id)}
+        class:hover:text-ink={!active}
+        onclick={() => goTo(id)}
       >
         <Icon size={18} weight={active ? "fill" : "regular"} />
         {$_(`service.${id}`)}
       </button>
     {/each}
+
+    <div class="text-faint px-3 pt-4 pb-1 text-[11px] tracking-wider uppercase">
+      Système
+    </div>
+
+    <button
+      class="group flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors"
+      class:bg-accent-soft={$nav === "applications"}
+      class:text-accent={$nav === "applications"}
+      class:text-muted={$nav !== "applications"}
+      class:hover:text-ink={$nav !== "applications"}
+      onclick={() => goTo("applications")}
+    >
+      <Package
+        size={18}
+        weight={$nav === "applications" ? "fill" : "regular"}
+      />
+      {$_("nav.applications")}
+    </button>
+    <button
+      class="group flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors"
+      class:bg-accent-soft={$nav === "health"}
+      class:text-accent={$nav === "health"}
+      class:text-muted={$nav !== "health"}
+      class:hover:text-ink={$nav !== "health"}
+      onclick={() => goTo("health")}
+    >
+      <HardDrives size={18} weight={$nav === "health" ? "fill" : "regular"} />
+      {$_("nav.health")}
+    </button>
+    <button
+      class="group flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors"
+      class:bg-accent-soft={$nav === "settings"}
+      class:text-accent={$nav === "settings"}
+      class:text-muted={$nav !== "settings"}
+      class:hover:text-ink={$nav !== "settings"}
+      onclick={() => goTo("settings")}
+    >
+      <GearSix size={18} weight={$nav === "settings" ? "fill" : "regular"} />
+      {$_("nav.settings")}
+    </button>
   </nav>
 
-  <div class="text-faint mt-auto px-5 py-4 text-[11px]">v0.1.0 · GPL-3.0</div>
+  <div class="text-faint px-5 py-4 text-[11px]">
+    {version ? `v${version} · ` : ""}GPL-3.0
+  </div>
 </aside>

@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+pub mod cache;
+
 /// A raw filesystem entry produced by a scan.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RawEntry {
@@ -104,7 +106,17 @@ pub fn top_n(root: &Path, n: usize) -> (Vec<RawEntry>, Vec<(PathBuf, u64)>) {
     let mut sizes: HashMap<PathBuf, u64> = HashMap::new();
 
     // Single traversal: collect files and accumulate directory sizes at once.
-    for entry in jwalk::WalkDir::new(root).into_iter().filter_map(|r| r.ok()) {
+    // Cache/dev directories are pruned (owned by their dedicated services), so
+    // this never traverses the millions of files inside node_modules/.cache.
+    let walk = jwalk::WalkDir::new(root).process_read_dir(|_, _, _, children| {
+        children.retain(|entry| {
+            entry
+                .as_ref()
+                .map(|e| !cache::should_skip(&e.file_name().to_string_lossy()))
+                .unwrap_or(true)
+        });
+    });
+    for entry in walk.into_iter().filter_map(|r| r.ok()) {
         let path = entry.path();
         if path == root {
             continue;

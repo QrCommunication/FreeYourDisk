@@ -14,6 +14,7 @@ pub enum ServiceId {
     BigFiles,
     GitRepos,
     DevCache,
+    AppCache,
 }
 
 /// Where deleted items go.
@@ -90,6 +91,20 @@ pub struct MountUsage {
     pub mount: String,
     pub total: u64,
     pub used: u64,
+}
+
+/// SMART health for one physical device (produced by the privileged helper,
+/// which is the only component allowed to run `smartctl`).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct SmartInfo {
+    pub device: String,
+    /// False when SMART could not be read (no smartctl, denied, unsupported).
+    pub available: bool,
+    /// SMART overall-health self-assessment (true = PASSED).
+    pub passed: Option<bool>,
+    /// Power-on hours — the drive's total "uptime".
+    pub power_on_hours: Option<u64>,
+    pub temperature_c: Option<i64>,
 }
 
 #[cfg(test)]

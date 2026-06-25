@@ -4,10 +4,16 @@
 //! Normal launch opens the WebView UI (user process, no privileges). With
 //! `--headless`, runs a non-interactive cleanup for the systemd timer (Phase 7).
 
+mod applications;
 mod commands;
 mod execute;
+mod filetypes;
 mod headless;
+mod health;
+mod monitor;
 mod services;
+mod settings;
+mod snapshot;
 mod state;
 mod tray;
 
@@ -23,7 +29,9 @@ fn main() {
     tauri::Builder::default()
         .manage(AppState::new())
         .setup(|app| {
+            core_scan::cache::load(&settings::config_dir().join("dir-cache.json"));
             tray::setup(app)?;
+            monitor::start(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| match event {
@@ -45,6 +53,19 @@ fn main() {
             commands::disk_usage,
             commands::schedule_enabled,
             commands::set_schedule,
+            commands::health_overview,
+            commands::disk_smart,
+            commands::file_types,
+            commands::home_total,
+            commands::system_total,
+            commands::list_applications,
+            commands::app_updates,
+            commands::uninstall_apps,
+            commands::update_apps,
+            commands::home_cache_load,
+            commands::home_cache_save,
+            commands::get_settings,
+            commands::set_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running FreeYourDisk");

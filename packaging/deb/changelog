@@ -1,3 +1,19 @@
+free-your-disk (0.3.0) unstable; urgency=low
+
+  * Unified home dashboard with a 3D usage donut and one-click scan.
+  * Whole-disk file-type breakdown (incl. caches & dependencies, system,
+    reserved) with clickable per-category file lists.
+  * Applications section: apt/flatpak/snap/AppImage inventory by size, update
+    checking, batch uninstall/update, protected system packages.
+  * App & browser cache cleanup (Chromium/Electron, Flatpak, Snap, npm).
+  * Disk health tab: SMART via nvme-cli/smartctl + real-time I/O graphs.
+  * Light/dark/system theme, language, launch at startup, low-space monitor.
+  * Incremental scan engine with instant cached results on open.
+  * Accurate du-based system-size measurement with honest reserved-blocks
+    accounting.
+
+ -- rony <rony@rlconseil.net>  Thu, 25 Jun 2026 18:00:00 +0000
+
 free-your-disk (0.1.0) unstable; urgency=low
 
   * Initial release.

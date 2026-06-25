@@ -1,24 +1,133 @@
 {
-  "app": { "name": "FreeYourDisk", "tagline": "Reclaim your disk, safely" },
-  "nav": { "dashboard": "Dashboard" },
+  "app": {
+    "name": "FreeYourDisk",
+    "tagline": "Free your disk, safely"
+  },
+  "nav": {
+    "home": "Home",
+    "applications": "Applications",
+    "health": "Disk health",
+    "settings": "Settings"
+  },
   "service": {
     "temp": "Temporary files",
+    "app_cache": "App & browser caches",
     "big_files": "Largest files",
     "git_repos": "Git worktrees",
     "dev_cache": "Dev caches",
     "temp_desc": "Old files in /tmp, /var/tmp and ~/.cache",
-    "big_files_desc": "The biggest files and folders on disk",
-    "git_repos_desc": "Stale and clean git worktrees to prune",
+    "app_cache_desc": "Brave/Chrome, Electron apps, Flatpak, Snap, npm caches…",
+    "big_files_desc": "The largest files and folders on disk",
+    "git_repos_desc": "Clean or stale git worktrees to prune",
     "dev_cache_desc": "node_modules, target, .venv and more"
   },
-  "dashboard": {
-    "disk_usage": "Disk usage",
+  "home": {
+    "subtitle": "Scan your disk and reclaim space in one click.",
+    "scan_cta": "Scan now",
+    "scanning": "Scanning…",
+    "scanning_hint": "Scanning your computer — this may take a moment on large disks.",
+    "progress": "{done} / {total} services scanned",
+    "used": "Used",
+    "free": "Free",
     "reclaimable": "Reclaimable",
-    "detected": "detected",
-    "analyze": "Analyze",
+    "selected": "Selected",
+    "results_title": "Items to clean",
     "rescan": "Rescan",
-    "used_of": "{used} of {total}",
-    "free": "{free} free"
+    "nothing_title": "Nothing to clean",
+    "nothing_desc": "Your disk is already clean.",
+    "select_all": "Select all",
+    "deselect_all": "Deselect all",
+    "clean_selected": "Clean selection",
+    "new_badge": "New",
+    "first_scan_hint": "First scan: baseline recorded. Next scans will highlight new items.",
+    "select_hint": "Check items: the donut fills green with the space you'll reclaim.",
+    "refreshing": "Refreshing in the background…"
+  },
+  "filetype": {
+    "title": "Breakdown by file type",
+    "files": "files",
+    "hint": "The largest files in this category — decide what to do with them.",
+    "images": "Images",
+    "videos": "Videos",
+    "audio": "Audio",
+    "archives": "Archives",
+    "disk_images": "Disk images / ISO",
+    "applications": "Applications",
+    "executables": "Executables / binaries",
+    "documents": "Documents",
+    "dev_caches": "Caches & dependencies",
+    "system": "System",
+    "reserved": "Reserved (filesystem)",
+    "other": "Other"
+  },
+  "applications": {
+    "subtitle": "Your installed apps, ranked by space. Batch update or uninstall.",
+    "check_updates": "Check for updates",
+    "only_updates": "Updates only",
+    "show_all": "Show all",
+    "protected": "System",
+    "protected_hint": "Essential system component: updates allowed, uninstall forbidden.",
+    "checking": "Checking…",
+    "updates_found": "{count} update(s) available",
+    "updates_failed": "Update check failed",
+    "none": "No applications detected",
+    "update_badge": "UPD",
+    "update_selected": "Update ({count})",
+    "uninstall_selected": "Uninstall",
+    "confirm_title": "Uninstall applications?",
+    "confirm_body": "{count} application(s) will be removed. Administrator authentication may be required.",
+    "uninstalled": "{count} application(s) uninstalled",
+    "updated": "{count} application(s) updated",
+    "action_partial": "{ok} succeeded, {err} failed",
+    "action_failed": "Operation failed"
+  },
+  "health": {
+    "subtitle": "Status, performance and SMART for every disk.",
+    "system_uptime": "System uptime",
+    "capacity": "Capacity",
+    "type": "Type",
+    "ssd": "SSD",
+    "hdd": "Hard drive",
+    "throughput": "Real-time throughput",
+    "read": "Read",
+    "write": "Write",
+    "smart_title": "SMART status",
+    "load_smart": "Load SMART data (admin)",
+    "loading_smart": "Reading SMART…",
+    "power_on": "Power-on hours",
+    "temperature": "Temperature",
+    "healthy": "Healthy",
+    "failing": "Failing",
+    "hours": "{count} h",
+    "smart_unavailable": "SMART unavailable (smartmontools required or access denied).",
+    "no_disks": "No physical disk detected."
+  },
+  "settings": {
+    "subtitle": "Appearance, language, startup and monitoring.",
+    "appearance": "Appearance",
+    "theme": "Theme",
+    "theme_system": "System",
+    "theme_light": "Light",
+    "theme_dark": "Dark",
+    "language": "Language",
+    "lang_system": "System",
+    "lang_fr": "Français",
+    "lang_en": "English",
+    "startup": "Startup",
+    "autostart": "Launch on session start",
+    "autostart_desc": "FreeYourDisk starts automatically and watches your disk space.",
+    "monitoring": "Monitoring",
+    "monitor": "Low disk space alert",
+    "monitor_desc": "Warn you when a disk's free space drops below the threshold.",
+    "threshold": "Alert threshold",
+    "scheduled_clean": "Scheduled cleanup",
+    "scheduled_clean_desc": "Automatically clean old caches every week."
+  },
+  "lowspace": {
+    "title": "Low disk space",
+    "body": "{mount} has only {percent}% free space left.",
+    "cta": "Clean now",
+    "dismiss": "Later"
   },
   "table": {
     "path": "Path",
@@ -39,11 +148,11 @@
     "summary": "{count} items",
     "destination": "Destination",
     "to_trash": "Move to trash",
-    "to_trash_hint": "Recoverable from the trash",
+    "to_trash_hint": "Recoverable from trash",
     "permanent_toggle": "Delete permanently (irreversible)",
-    "root_warning": "Some items require administrator rights and will be permanently removed.",
+    "root_warning": "Some items require administrator rights and will be permanently deleted.",
     "empty": "Select items to clean first.",
-    "acknowledge": "I understand this cannot be undone"
+    "acknowledge": "I understand this is irreversible"
   },
   "report": {
     "title": "Cleanup complete",
@@ -61,19 +170,19 @@
     "retry": "Retry"
   },
   "toast": {
-    "clean_success": "Freed {size}",
-    "clean_partial": "Freed {size}, {errors} errors",
+    "clean_success": "{size} freed",
+    "clean_partial": "{size} freed, {errors} errors",
     "clean_error": "Cleanup failed",
     "scan_error": "Scan failed"
   },
   "tray": {
-    "occupied": "Occupied space",
+    "occupied": "Space used",
     "open": "Open FreeYourDisk",
-    "clean": "Clean up"
+    "clean": "Clean"
   },
   "schedule": {
     "title": "Scheduled cleanup",
-    "desc": "Automatically clean old cache files every week.",
+    "desc": "Automatically clean old caches every week.",
     "failed": "Could not change the schedule"
   }
 }

@@ -4,7 +4,7 @@
 //! helper via `pkexec`. The helper invocation is injected so the routing logic
 //! is unit-testable without root.
 
-use core_ipc::{DeletionPlan, Destination, ExecutionReport, ItemError, ScanItem};
+use core_ipc::{DeletionPlan, Destination, ExecutionReport, ItemError, ScanItem, SmartInfo};
 use core_trash::Zones;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -12,6 +12,23 @@ use std::process::{Command, Stdio};
 
 /// Installed location of the privileged helper.
 pub const HELPER_PATH: &str = "/usr/lib/freeyourdisk/freeyourdisk-helper";
+
+/// Resolve the helper binary: the installed path in production, or a sibling of
+/// the running executable when developing (`cargo tauri dev`).
+pub fn resolve_helper_path() -> PathBuf {
+    let installed = PathBuf::from(HELPER_PATH);
+    if installed.exists() {
+        return installed;
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(sibling) = exe.parent().map(|d| d.join("freeyourdisk-helper")) {
+            if sibling.exists() {
+                return sibling;
+            }
+        }
+    }
+    installed
+}
 
 /// User-deletion zone: anything under the user's home.
 fn user_zones(home: &Path) -> Zones {
@@ -92,7 +109,7 @@ pub fn pkexec_helper(plan: &DeletionPlan) -> ExecutionReport {
     };
 
     let child = Command::new("pkexec")
-        .arg(HELPER_PATH)
+        .arg(resolve_helper_path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -115,6 +132,23 @@ pub fn pkexec_helper(plan: &DeletionPlan) -> ExecutionReport {
             )
         }),
         Err(err) => err_report(plan, &err.to_string()),
+    }
+}
+
+/// Read SMART for every device in one privileged call. Returns an empty vec if
+/// pkexec is cancelled or the helper/smartctl is unavailable (graceful).
+pub fn pkexec_smart(devices: &[String]) -> Vec<SmartInfo> {
+    if devices.is_empty() {
+        return Vec::new();
+    }
+    let mut cmd = Command::new("pkexec");
+    cmd.arg(resolve_helper_path()).arg("smart");
+    for dev in devices {
+        cmd.arg(dev);
+    }
+    match cmd.output() {
+        Ok(out) => serde_json::from_slice(&out.stdout).unwrap_or_default(),
+        Err(_) => Vec::new(),
     }
 }
 

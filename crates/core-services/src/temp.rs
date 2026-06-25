@@ -2,10 +2,10 @@
 //! Temp files service: `/tmp`, `/var/tmp` (root) and `~/.cache` (user), filtered
 //! by minimum age.
 
-use crate::{path_id, Service};
+use crate::{dir_total, path_id, Service};
 use core_ipc::{ItemKind, ScanItem, ScanResult, ServiceId};
-use core_scan::{scan_dir, ScanOpts};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// A temp root to scan, and whether removing files there needs root.
 #[derive(Clone, Debug)]
@@ -50,28 +50,63 @@ impl Service for TempService {
     }
 
     fn scan(&self) -> ScanResult {
-        let opts = ScanOpts {
-            follow_symlinks: false,
-            min_age_days: Some(self.min_age_days),
-        };
+        // Aggregate by *immediate child*: each cache subdirectory becomes ONE
+        // deletable unit with its total recursive size (caches regenerate), and
+        // loose files are kept individually with an age filter. This keeps the
+        // item count tiny (~dozens) even when ~/.cache holds 600k files.
+        let cutoff = Duration::from_secs(self.min_age_days as u64 * 86_400);
+        let now = SystemTime::now();
         let mut items = Vec::new();
 
         for root in &self.roots {
-            if !root.path.exists() {
+            let Ok(entries) = std::fs::read_dir(&root.path) else {
                 continue;
-            }
-            for entry in scan_dir(&root.path, &opts) {
-                if entry.is_dir {
-                    continue; // temp cleanup targets files only
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let Ok(meta) = entry.metadata() else { continue };
+                let last_access = meta
+                    .accessed()
+                    .ok()
+                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs() as i64);
+
+                if meta.is_dir() {
+                    let size = dir_total(&path);
+                    if size == 0 {
+                        continue;
+                    }
+                    items.push(ScanItem {
+                        id: path_id(&path),
+                        path,
+                        size_bytes: size,
+                        last_access,
+                        kind: ItemKind::Dir,
+                        requires_root: root.requires_root,
+                    });
+                } else if meta.is_file() {
+                    // Skip files modified more recently than the age threshold.
+                    let too_recent = meta
+                        .modified()
+                        .ok()
+                        .map(|m| {
+                            now.duration_since(m)
+                                .map(|age| age < cutoff)
+                                .unwrap_or(true)
+                        })
+                        .unwrap_or(true);
+                    if too_recent {
+                        continue;
+                    }
+                    items.push(ScanItem {
+                        id: path_id(&path),
+                        path,
+                        size_bytes: meta.len(),
+                        last_access,
+                        kind: ItemKind::File,
+                        requires_root: root.requires_root,
+                    });
                 }
-                items.push(ScanItem {
-                    id: path_id(&entry.path),
-                    path: entry.path,
-                    size_bytes: entry.size_bytes,
-                    last_access: entry.last_access,
-                    kind: ItemKind::File,
-                    requires_root: root.requires_root,
-                });
             }
         }
 

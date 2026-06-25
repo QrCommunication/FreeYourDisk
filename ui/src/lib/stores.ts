@@ -1,16 +1,13 @@
 import { writable } from "svelte/store";
 import type { ServiceId } from "./api";
 
-export type View = { kind: "dashboard" } | { kind: "service"; id: ServiceId };
+export type Nav = "home" | ServiceId | "applications" | "health" | "settings";
 
-/** Current top-level view. */
-export const view = writable<View>({ kind: "dashboard" });
+/** Active top-level section. */
+export const nav = writable<Nav>("home");
 
-export function goDashboard(): void {
-  view.set({ kind: "dashboard" });
-}
-export function goService(id: ServiceId): void {
-  view.set({ kind: "service", id });
+export function goTo(section: Nav): void {
+  nav.set(section);
 }
 
 export interface Toast {

@@ -12,10 +12,15 @@ describe("api", () => {
   beforeEach(() => invoke.mockReset());
 
   it("scan invokes with the service id", async () => {
-    invoke.mockResolvedValue({ service: "temp", items: [], total_bytes: 0 });
+    invoke.mockResolvedValue({
+      result: { service: "temp", items: [], total_bytes: 0 },
+      first_scan: true,
+      new_ids: [],
+    });
     const result = await api.scan("temp");
     expect(invoke).toHaveBeenCalledWith("scan", { service: "temp" });
-    expect(result.total_bytes).toBe(0);
+    expect(result.result.total_bytes).toBe(0);
+    expect(result.first_scan).toBe(true);
   });
 
   it("preview forwards the selection", async () => {

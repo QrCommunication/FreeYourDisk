@@ -1,99 +1,101 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { _ } from "svelte-i18n";
-  import { ArrowLeft, Broom } from "phosphor-svelte";
+  import { fade } from "svelte/transition";
+  import { Broom } from "phosphor-svelte";
   import {
     api,
+    type ScanItem,
+    type ServiceId,
     type Destination,
     type DeletionPlan,
     type ExecutionReport,
-    type ScanResult,
-    type ServiceId,
   } from "../api";
-  import { goDashboard, toasts } from "../stores";
-  import { humanizeBytes } from "../format";
   import { serviceIcon } from "../icons";
-  import ItemsTable from "../components/ItemsTable.svelte";
-  import ServiceChart from "../components/ServiceChart.svelte";
+  import { humanizeBytes } from "../format";
+  import { dedupSize } from "../reclaim";
+  import { toasts } from "../stores";
+  import ItemList from "../components/ItemList.svelte";
+  import StateBlock from "../components/StateBlock.svelte";
   import ConfirmDrawer from "../components/ConfirmDrawer.svelte";
   import Report from "../components/Report.svelte";
-  import StateBlock from "../components/StateBlock.svelte";
 
   let { service }: { service: ServiceId } = $props();
-  const Icon = $derived(serviceIcon[service]);
 
-  let status = $state<"loading" | "error" | "data">("loading");
-  let result = $state<ScanResult | null>(null);
-  let selected = $state<Set<string>>(new Set());
-  let plan = $state<DeletionPlan | null>(null);
-  let report = $state<ExecutionReport | null>(null);
+  let status = $state<"loading" | "done" | "error">("loading");
+  let list = $state<ScanItem[]>([]);
+  let newIds = $state<Set<string>>(new Set());
+  let selection = $state<Set<string>>(new Set());
   let busy = $state(false);
+  let confirming = $state(false);
+  let report = $state<ExecutionReport | null>(null);
 
-  const selectedBytes = $derived(
-    result
-      ? result.items
-          .filter((i) => selected.has(i.id))
-          .reduce((s, i) => s + i.size_bytes, 0)
-      : 0,
-  );
+  const Icon = $derived(serviceIcon[service]);
+  const total = $derived(dedupSize(list));
+  const selected = $derived(dedupSize(list.filter((i) => selection.has(i.id))));
+  const selCount = $derived(selection.size);
 
-  async function doScan() {
+  async function scan() {
     status = "loading";
-    result = null;
-    selected = new Set();
+    selection = new Set();
     try {
-      result = await api.scan(service);
-      status = "data";
+      const resp = await api.scan(service);
+      list = resp.result.items
+        .slice()
+        .sort((a, b) => b.size_bytes - a.size_bytes);
+      newIds = new Set(resp.first_scan ? [] : resp.new_ids);
+      status = "done";
     } catch {
       status = "error";
-      toasts.error($_("toast.scan_error"));
     }
   }
 
   function toggle(id: string) {
-    const next = new Set(selected);
+    const next = new Set(selection);
     if (next.has(id)) next.delete(id);
     else next.add(id);
-    selected = next;
+    selection = next;
   }
-
-  function toggleAll(ids: string[]) {
-    const allSelected = ids.every((id) => selected.has(id));
-    const next = new Set(selected);
+  function setMany(ids: string[], on: boolean) {
+    const next = new Set(selection);
     for (const id of ids) {
-      if (allSelected) next.delete(id);
-      else next.add(id);
+      if (on) next.add(id);
+      else next.delete(id);
     }
-    selected = next;
+    selection = next;
   }
 
-  async function openConfirm() {
-    if (selected.size === 0) return;
-    try {
-      plan = await api.preview(service, [...selected]);
-    } catch {
-      toasts.error($_("toast.scan_error"));
-    }
+  function buildPlan(): DeletionPlan {
+    const chosen = list.filter((i) => selection.has(i.id));
+    return {
+      items: chosen,
+      destination: "trash",
+      total_bytes: dedupSize(chosen),
+      requires_root: chosen.some((i) => i.requires_root),
+    };
   }
 
-  async function execute(destination: Destination) {
-    if (!plan) return;
+  async function doExecute(destination: Destination) {
     busy = true;
     try {
-      const r = await api.execute({ ...plan, destination });
-      report = r;
-      plan = null;
-      const freed = humanizeBytes(r.freed_bytes);
-      if (r.errors.length > 0) {
+      const result = await api.execute({ ...buildPlan(), destination });
+      report = result;
+      confirming = false;
+      if (result.errors.length > 0) {
         toasts.error(
           $_("toast.clean_partial", {
-            values: { size: freed, errors: r.errors.length },
+            values: {
+              size: humanizeBytes(result.freed_bytes),
+              errors: result.errors.length,
+            },
           }),
         );
       } else {
-        toasts.success($_("toast.clean_success", { values: { size: freed } }));
+        toasts.success(
+          $_("toast.clean_success", {
+            values: { size: humanizeBytes(result.freed_bytes) },
+          }),
+        );
       }
-      await doScan();
     } catch {
       toasts.error($_("toast.clean_error"));
     } finally {
@@ -101,84 +103,86 @@
     }
   }
 
-  onMount(doScan);
+  function afterReport() {
+    report = null;
+    scan();
+  }
+
+  // (Re)scan whenever the active service changes.
+  $effect(() => {
+    void service;
+    scan();
+  });
 </script>
 
-<div class="mx-auto max-w-5xl px-8 py-8">
+<div class="w-full px-10 py-8">
   <header class="mb-6 flex items-center gap-4">
-    <button
-      class="border-line text-muted hover:text-ink grid h-9 w-9 shrink-0 cursor-pointer place-items-center rounded-lg border transition-colors active:translate-y-px"
-      aria-label={$_("actions.back")}
-      onclick={goDashboard}
+    <span
+      class="bg-accent-soft text-accent grid h-12 w-12 place-items-center rounded-2xl"
     >
-      <ArrowLeft size={16} />
-    </button>
-    <div
-      class="bg-accent-soft text-accent grid h-10 w-10 shrink-0 place-items-center rounded-lg"
-    >
-      <Icon size={20} />
-    </div>
-    <div class="min-w-0 flex-1">
-      <h1 class="text-ink text-lg font-semibold tracking-tight">
+      <Icon size={26} weight="duotone" />
+    </span>
+    <div class="flex-1">
+      <h1 class="text-2xl font-semibold tracking-tight">
         {$_(`service.${service}`)}
       </h1>
-      <p class="text-muted truncate text-sm">{$_(`service.${service}_desc`)}</p>
+      <p class="text-muted text-sm">{$_(`service.${service}_desc`)}</p>
     </div>
-    {#if result}
-      <span class="nums text-accent shrink-0 text-lg font-semibold"
-        >{humanizeBytes(result.total_bytes)}</span
-      >
+    {#if status === "done" && list.length > 0}
+      <div class="text-right">
+        <p class="text-faint text-[11px] uppercase">{$_("home.reclaimable")}</p>
+        <p class="nums text-savings text-xl font-semibold">
+          {humanizeBytes(total)}
+        </p>
+      </div>
     {/if}
   </header>
 
   {#if status === "loading"}
     <StateBlock kind="loading" />
   {:else if status === "error"}
-    <StateBlock kind="error" onretry={doScan} />
-  {:else if result && result.items.length === 0}
+    <StateBlock kind="error" onretry={scan} />
+  {:else if list.length === 0}
     <StateBlock kind="empty" />
-  {:else if result}
-    <div class="border-line bg-surface mb-5 rounded-xl border p-4">
-      <ServiceChart items={result.items} {service} />
-    </div>
-
-    <ItemsTable
-      items={result.items}
-      {selected}
+  {:else}
+    <ItemList
+      items={list}
+      selected={selection}
+      {newIds}
       ontoggle={toggle}
-      ontoggleAll={toggleAll}
+      onselectall={setMany}
+      max={300}
     />
-
-    <div
-      class="bg-base/80 border-line sticky bottom-0 mt-4 flex items-center justify-between border-t py-3 backdrop-blur"
-    >
-      <span class="text-muted text-sm">
-        {$_("table.selected", { values: { count: selected.size } })}
-        {#if selected.size > 0}<span class="nums text-accent ml-1"
-            >· {humanizeBytes(selectedBytes)}</span
-          >{/if}
-      </span>
-      <button
-        class="bg-accent text-accent-ink flex cursor-pointer items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40"
-        disabled={selected.size === 0}
-        onclick={openConfirm}
-      >
-        <Broom size={16} />
-        {$_("actions.preview")}
-      </button>
-    </div>
+    {#if selCount > 0}
+      <div class="mt-5 flex items-center justify-between" in:fade>
+        <span class="text-muted text-sm">
+          {$_("table.selected", { values: { count: selCount } })} ·
+          <span class="nums text-freed font-medium"
+            >{humanizeBytes(selected)}</span
+          >
+        </span>
+        <button
+          class="bg-freed inline-flex cursor-pointer items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition active:scale-95"
+          disabled={busy}
+          onclick={() => (confirming = true)}
+        >
+          <Broom size={18} weight="fill" />
+          {$_("home.clean_selected")}
+        </button>
+      </div>
+    {/if}
   {/if}
 </div>
 
-{#if plan}
+{#if confirming}
   <ConfirmDrawer
-    {plan}
+    plan={buildPlan()}
     {busy}
-    onconfirm={execute}
-    oncancel={() => (plan = null)}
+    onconfirm={doExecute}
+    oncancel={() => (confirming = false)}
   />
 {/if}
 
 {#if report}
-  <Report {report} ondone={() => (report = null)} />
+  <Report {report} ondone={afterReport} />
 {/if}

@@ -48,7 +48,7 @@
         cy="12"
         r="8"
         fill="none"
-        stroke="#1f2630"
+        stroke="var(--c-line)"
         stroke-width="3.5"
       />
       <circle
@@ -56,7 +56,7 @@
         cy="12"
         r="8"
         fill="none"
-        stroke="#2dd4bf"
+        stroke="var(--c-accent)"
         stroke-width="3.5"
         stroke-dasharray="36 50"
         stroke-linecap="round"

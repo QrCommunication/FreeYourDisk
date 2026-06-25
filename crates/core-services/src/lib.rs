@@ -8,11 +8,13 @@
 use core_ipc::{DeletionPlan, Destination, ScanItem, ScanResult, ServiceId};
 use std::path::Path;
 
+pub mod app_cache;
 pub mod big_files;
 pub mod dev_cache;
 pub mod git_repos;
 pub mod temp;
 
+pub use app_cache::AppCacheService;
 pub use big_files::BigFilesService;
 pub use dev_cache::DevCacheService;
 pub use git_repos::GitService;
@@ -57,8 +59,9 @@ pub(crate) fn path_id(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-/// Total recursive size of a directory (0 if missing). Thin wrapper over
-/// `core_scan::dir_sizes`.
+/// Total recursive size of a directory (0 if missing). Uses the persisted,
+/// mtime-validated cache so unchanged subtrees (node_modules, caches) are not
+/// re-walked on subsequent scans.
 pub(crate) fn dir_total(path: &Path) -> u64 {
-    core_scan::dir_sizes(path).get(path).copied().unwrap_or(0)
+    core_scan::cache::cached_dir_total(path)
 }

@@ -1,7 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 // Mirror of the Rust `core-ipc` DTOs. Kept in lockstep with that crate.
-export type ServiceId = "temp" | "big_files" | "git_repos" | "dev_cache";
+export type ServiceId =
+  | "temp"
+  | "big_files"
+  | "git_repos"
+  | "dev_cache"
+  | "app_cache";
 export type Destination = "trash" | "permanent";
 export type ItemKind =
   | "file"
@@ -23,6 +29,12 @@ export interface ScanResult {
   service: ServiceId;
   items: ScanItem[];
   total_bytes: number;
+}
+
+export interface ScanResponse {
+  result: ScanResult;
+  first_scan: boolean;
+  new_ids: string[];
 }
 
 export interface DeletionPlan {
@@ -49,15 +61,85 @@ export interface MountUsage {
   used: number;
 }
 
+export interface DiskInfo {
+  device: string;
+  model: string | null;
+  size_bytes: number;
+  rotational: boolean;
+  read_bytes: number;
+  write_bytes: number;
+}
+
+export interface HealthOverview {
+  uptime_secs: number;
+  disks: DiskInfo[];
+}
+
+export interface SmartInfo {
+  device: string;
+  available: boolean;
+  passed: boolean | null;
+  power_on_hours: number | null;
+  temperature_c: number | null;
+}
+
+export interface FileEntry {
+  path: string;
+  size_bytes: number;
+}
+
+export interface TypeBucket {
+  category: string;
+  bytes: number;
+  count: number;
+  top: FileEntry[];
+}
+
+export type AppSource = "apt" | "flatpak" | "snap" | "appimage";
+
+export interface AppEntry {
+  id: string;
+  name: string;
+  source: AppSource;
+  version: string | null;
+  size_bytes: number;
+  requires_root: boolean;
+  protected: boolean;
+}
+
+export interface AppActionReport {
+  succeeded: string[];
+  errors: string[];
+}
+
+export type ThemePref = "system" | "light" | "dark";
+export type LangPref = "system" | "fr" | "en";
+
+export interface Settings {
+  theme: ThemePref;
+  language: LangPref;
+  autostart: boolean;
+  monitor_enabled: boolean;
+  monitor_threshold: number;
+}
+
+export interface LowSpaceAlert {
+  mount: string;
+  free_percent: number;
+  free_bytes: number;
+  total_bytes: number;
+}
+
 export const SERVICES: ServiceId[] = [
   "temp",
+  "app_cache",
   "big_files",
   "git_repos",
   "dev_cache",
 ];
 
 export const api = {
-  scan: (service: ServiceId) => invoke<ScanResult>("scan", { service }),
+  scan: (service: ServiceId) => invoke<ScanResponse>("scan", { service }),
   preview: (service: ServiceId, selection: string[]) =>
     invoke<DeletionPlan>("preview", { service, selection }),
   execute: (plan: DeletionPlan) => invoke<ExecutionReport>("execute", { plan }),
@@ -65,4 +147,22 @@ export const api = {
   scheduleEnabled: () => invoke<boolean>("schedule_enabled"),
   setSchedule: (enabled: boolean) =>
     invoke<boolean>("set_schedule", { enabled }),
+  healthOverview: () => invoke<HealthOverview>("health_overview"),
+  diskSmart: () => invoke<SmartInfo[]>("disk_smart"),
+  fileTypes: () => invoke<TypeBucket[]>("file_types"),
+  homeTotal: () => invoke<number>("home_total"),
+  systemTotal: () => invoke<number>("system_total"),
+  listApplications: () => invoke<AppEntry[]>("list_applications"),
+  appUpdates: () => invoke<string[]>("app_updates"),
+  uninstallApps: (ids: string[]) =>
+    invoke<AppActionReport>("uninstall_apps", { ids }),
+  updateApps: (ids: string[]) =>
+    invoke<AppActionReport>("update_apps", { ids }),
+  homeCacheLoad: () => invoke<string | null>("home_cache_load"),
+  homeCacheSave: (data: string) => invoke<void>("home_cache_save", { data }),
+  getSettings: () => invoke<Settings>("get_settings"),
+  setSettings: (settings: Settings) =>
+    invoke<Settings>("set_settings", { settings }),
+  onLowSpace: (handler: (alert: LowSpaceAlert) => void): Promise<UnlistenFn> =>
+    listen<LowSpaceAlert>("low-space", (event) => handler(event.payload)),
 };

@@ -17,7 +17,9 @@ serde_json = { workspace = true }
 core-ipc = { path = "../crates/core-ipc" }
 core-trash = { path = "../crates/core-trash" }
 core-services = { path = "../crates/core-services" }
+core-scan = { path = "../crates/core-scan" }
 sysinfo = "0.39"
+jwalk = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
