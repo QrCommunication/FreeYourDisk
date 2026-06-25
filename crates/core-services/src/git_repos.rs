@@ -90,7 +90,10 @@ fn worktree_items(repo_path: &Path) -> Vec<ScanItem> {
     };
 
     let mut items = Vec::new();
-    for name in names.iter().flatten() {
+    for name in names.iter() {
+        let Ok(Some(name)) = name else {
+            continue;
+        };
         let Ok(worktree) = repo.find_worktree(name) else {
             continue;
         };

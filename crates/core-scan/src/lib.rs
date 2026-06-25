@@ -104,14 +104,14 @@ pub fn top_n(root: &Path, n: usize) -> (Vec<RawEntry>, Vec<(PathBuf, u64)>) {
         .into_iter()
         .filter(|e| !e.is_dir)
         .collect();
-    files.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
+    files.sort_by_key(|entry| std::cmp::Reverse(entry.size_bytes));
     files.truncate(n);
 
     let mut dirs: Vec<(PathBuf, u64)> = dir_sizes(root)
         .into_iter()
         .filter(|(p, _)| p != root)
         .collect();
-    dirs.sort_by(|a, b| b.1.cmp(&a.1));
+    dirs.sort_by_key(|(_, size)| std::cmp::Reverse(*size));
     dirs.truncate(n);
 
     (files, dirs)
