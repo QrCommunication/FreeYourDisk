@@ -25,7 +25,8 @@
 >
   {#if kind === "loading"}
     <CircleNotch size={30} class="text-accent animate-spin" />
-    <p class="text-muted text-sm">{$_("state.loading")}</p>
+    <p class="text-ink text-sm font-medium">{$_("state.loading")}</p>
+    <p class="text-faint max-w-xs text-xs">{$_("state.loading_hint")}</p>
   {:else if kind === "empty"}
     <div
       class="bg-accent-soft text-accent grid h-12 w-12 place-items-center rounded-full"

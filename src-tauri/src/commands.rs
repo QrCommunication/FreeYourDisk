@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Tauri commands exposed to the UI. Thin wrappers over the services and the
-//! execution router; the heavy logic lives in `core-*` and `execute`.
+//! Tauri commands exposed to the UI.
+//!
+//! The scan/preview/execute commands do heavy, blocking filesystem work, so
+//! they run on a blocking thread pool via `spawn_blocking` — otherwise they
+//! would block the main thread and freeze the UI on large home directories.
 
 use crate::execute;
 use crate::services::make_service;
@@ -8,52 +11,70 @@ use crate::state::AppState;
 use core_ipc::{DeletionPlan, ExecutionReport, MountUsage, ScanResult, ServiceId};
 use tauri::State;
 
-/// Read-only scan for a service. Result is cached for the session.
+/// Read-only scan for a service (off the main thread). Result is cached.
 #[tauri::command]
-pub fn scan(service: ServiceId, state: State<AppState>) -> ScanResult {
-    let result = {
-        let cfg = state.config.lock().expect("config lock");
-        make_service(service, &cfg).scan()
-    };
+pub async fn scan(service: ServiceId, state: State<'_, AppState>) -> Result<ScanResult, String> {
+    let cfg = state.config.lock().map_err(|e| e.to_string())?.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || make_service(service, &cfg).scan())
+        .await
+        .map_err(|e| e.to_string())?;
     state
         .cache
         .lock()
-        .expect("cache lock")
+        .map_err(|e| e.to_string())?
         .insert(service, result.clone());
-    result
+    Ok(result)
 }
 
-/// Dry-run: build a deletion plan from the selected item ids.
+/// Dry-run: build a deletion plan from the selected item ids (off the main thread).
 #[tauri::command]
-pub fn preview(service: ServiceId, selection: Vec<String>, state: State<AppState>) -> DeletionPlan {
-    let cfg = state.config.lock().expect("config lock");
-    make_service(service, &cfg).preview(&selection)
+pub async fn preview(
+    service: ServiceId,
+    selection: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<DeletionPlan, String> {
+    let cfg = state.config.lock().map_err(|e| e.to_string())?.clone();
+    tauri::async_runtime::spawn_blocking(move || make_service(service, &cfg).preview(&selection))
+        .await
+        .map_err(|e| e.to_string())
 }
 
-/// Execute a confirmed plan (user items in-process, root items via pkexec).
+/// Execute a confirmed plan (off the main thread; root items via pkexec).
 #[tauri::command]
-pub fn execute(plan: DeletionPlan, state: State<AppState>) -> ExecutionReport {
-    let home = state.config.lock().expect("config lock").home.clone();
-    execute::execute_plan(&plan, &home, execute::pkexec_helper)
+pub async fn execute(
+    plan: DeletionPlan,
+    state: State<'_, AppState>,
+) -> Result<ExecutionReport, String> {
+    let home = state.config.lock().map_err(|e| e.to_string())?.home.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        execute::execute_plan(&plan, &home, execute::pkexec_helper)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
-/// Per-mount disk usage for the dashboard donut.
+/// Per-mount disk usage for the dashboard donut. Off the main thread — probing
+/// mounts can be slow when network/stale mounts are present.
 #[tauri::command]
-pub fn disk_usage() -> Vec<MountUsage> {
-    use sysinfo::Disks;
-    let disks = Disks::new_with_refreshed_list();
-    disks
-        .iter()
-        .map(|disk| {
-            let total = disk.total_space();
-            let available = disk.available_space();
-            MountUsage {
-                mount: disk.mount_point().to_string_lossy().into_owned(),
-                total,
-                used: total.saturating_sub(available),
-            }
-        })
-        .collect()
+pub async fn disk_usage() -> Result<Vec<MountUsage>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        use sysinfo::Disks;
+        let disks = Disks::new_with_refreshed_list();
+        disks
+            .iter()
+            .map(|disk| {
+                let total = disk.total_space();
+                let available = disk.available_space();
+                MountUsage {
+                    mount: disk.mount_point().to_string_lossy().into_owned(),
+                    total,
+                    used: total.saturating_sub(available),
+                }
+            })
+            .collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Whether the weekly cleanup systemd user timer is enabled.

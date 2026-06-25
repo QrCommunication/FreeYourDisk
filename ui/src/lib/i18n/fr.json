@@ -56,7 +56,8 @@
     "done": "Terminé"
   },
   "state": {
-    "loading": "Analyse…",
+    "loading": "Scan de votre ordinateur en cours…",
+    "loading_hint": "Cela peut prendre un moment sur un grand disque.",
     "empty_title": "Rien à nettoyer",
     "empty_desc": "Cette zone est déjà propre.",
     "error_title": "Échec de l'analyse",

@@ -100,17 +100,46 @@ pub fn dir_sizes(root: &Path) -> HashMap<PathBuf, u64> {
 /// Return the `n` largest files and the `n` largest directories (excluding
 /// `root` itself), each sorted by descending size.
 pub fn top_n(root: &Path, n: usize) -> (Vec<RawEntry>, Vec<(PathBuf, u64)>) {
-    let mut files: Vec<RawEntry> = scan_dir(root, &ScanOpts::default())
-        .into_iter()
-        .filter(|e| !e.is_dir)
-        .collect();
+    let mut files: Vec<RawEntry> = Vec::new();
+    let mut sizes: HashMap<PathBuf, u64> = HashMap::new();
+
+    // Single traversal: collect files and accumulate directory sizes at once.
+    for entry in jwalk::WalkDir::new(root).into_iter().filter_map(|r| r.ok()) {
+        let path = entry.path();
+        if path == root {
+            continue;
+        }
+        let Ok(meta) = entry.metadata() else { continue };
+        if !meta.is_file() {
+            continue;
+        }
+        let len = meta.len();
+        let last_access = meta
+            .accessed()
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64);
+        files.push(RawEntry {
+            path: path.clone(),
+            size_bytes: len,
+            last_access,
+            is_dir: false,
+        });
+
+        let mut current = path;
+        while let Some(parent) = current.parent() {
+            *sizes.entry(parent.to_path_buf()).or_insert(0) += len;
+            if parent == root {
+                break;
+            }
+            current = parent.to_path_buf();
+        }
+    }
+
     files.sort_by_key(|entry| std::cmp::Reverse(entry.size_bytes));
     files.truncate(n);
 
-    let mut dirs: Vec<(PathBuf, u64)> = dir_sizes(root)
-        .into_iter()
-        .filter(|(p, _)| p != root)
-        .collect();
+    let mut dirs: Vec<(PathBuf, u64)> = sizes.into_iter().filter(|(p, _)| p != root).collect();
     dirs.sort_by_key(|(_, size)| std::cmp::Reverse(*size));
     dirs.truncate(n);
 

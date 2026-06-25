@@ -53,7 +53,8 @@
     "done": "Done"
   },
   "state": {
-    "loading": "Scanning…",
+    "loading": "Scanning your computer…",
+    "loading_hint": "This may take a moment on large disks.",
     "empty_title": "Nothing to clean",
     "empty_desc": "This area is already clean.",
     "error_title": "Scan failed",
