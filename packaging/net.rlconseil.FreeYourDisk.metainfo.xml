@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>net.rlconseil.FreeYourDisk</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>FreeYourDisk</name>
+  <summary>Safe disk cleanup utility</summary>
+
+  <description>
+    <p>
+      FreeYourDisk scans your disk and safely cleans temporary files, large
+      files, stale git worktrees and developer caches, with a modern visual
+      dashboard.
+    </p>
+    <p>
+      Scans are read-only. Deletions are previewed (dry-run) and go to the
+      recoverable trash by default; permanent deletion is an explicit opt-in.
+      Actions that require administrator rights run through a minimal Polkit
+      helper, so the interface never runs as root.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">FreeYourDisk.desktop</launchable>
+
+  <url type="homepage">https://github.com/QrCommunication/FreeYourDisk</url>
+  <url type="bugtracker">https://github.com/QrCommunication/FreeYourDisk/issues</url>
+  <url type="vcs-browser">https://github.com/QrCommunication/FreeYourDisk</url>
+
+  <developer id="net.rlconseil">
+    <name>rony</name>
+  </developer>
+
+  <content_rating type="oars-1.1" />
+
+  <categories>
+    <category>Utility</category>
+    <category>System</category>
+  </categories>
+
+  <keywords>
+    <keyword>disk</keyword>
+    <keyword>cleanup</keyword>
+    <keyword>cache</keyword>
+    <keyword>storage</keyword>
+  </keywords>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Dashboard with disk usage and cleanup services</caption>
+      <image>https://raw.githubusercontent.com/QrCommunication/FreeYourDisk/master/docs/screenshots/dashboard.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Per-service cleanup view</caption>
+      <image>https://raw.githubusercontent.com/QrCommunication/FreeYourDisk/master/docs/screenshots/service-view.png</image>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="0.1.0" date="2026-06-25">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

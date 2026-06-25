@@ -11,15 +11,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Install system deps (Tauri/GTK)
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
             libayatana-appindicator3-dev libxdo-dev cmake build-essential
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Build frontend (required to compile src-tauri)
+        working-directory: ui
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+
       - name: fmt
         run: cargo fmt --all --check
       - name: clippy
@@ -28,7 +44,7 @@ jobs:
         run: cargo test --workspace
 
   front:
-    name: Front (lint + test)
+    name: Front (lint + check + test)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,8 +60,9 @@ jobs:
       - name: Lint
         working-directory: ui
         run: pnpm lint
+      - name: Type-check
+        working-directory: ui
+        run: pnpm check
       - name: Test
         working-directory: ui
         run: pnpm test
-
-  # build-deb job is added in Phase 8 (packaging).

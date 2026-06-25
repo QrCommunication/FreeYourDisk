@@ -66,7 +66,8 @@
           "/usr/share/doc/free-your-disk/changelog.gz": "../packaging/deb/changelog.gz",
           "/usr/share/man/man1/freeyourdisk.1.gz": "../packaging/deb/freeyourdisk.1.gz",
           "/usr/lib/systemd/user/freeyourdisk.service": "../packaging/systemd/freeyourdisk.service",
-          "/usr/lib/systemd/user/freeyourdisk.timer": "../packaging/systemd/freeyourdisk.timer"
+          "/usr/lib/systemd/user/freeyourdisk.timer": "../packaging/systemd/freeyourdisk.timer",
+          "/usr/share/metainfo/net.rlconseil.FreeYourDisk.metainfo.xml": "../packaging/net.rlconseil.FreeYourDisk.metainfo.xml"
         },
         "section": "utils",
         "priority": "optional"
@@ -82,7 +83,8 @@
           "/usr/share/doc/free-your-disk/copyright": "../packaging/deb/copyright",
           "/usr/share/man/man1/freeyourdisk.1.gz": "../packaging/deb/freeyourdisk.1.gz",
           "/usr/lib/systemd/user/freeyourdisk.service": "../packaging/systemd/freeyourdisk.service",
-          "/usr/lib/systemd/user/freeyourdisk.timer": "../packaging/systemd/freeyourdisk.timer"
+          "/usr/lib/systemd/user/freeyourdisk.timer": "../packaging/systemd/freeyourdisk.timer",
+          "/usr/share/metainfo/net.rlconseil.FreeYourDisk.metainfo.xml": "../packaging/net.rlconseil.FreeYourDisk.metainfo.xml"
         }
       }
     }
