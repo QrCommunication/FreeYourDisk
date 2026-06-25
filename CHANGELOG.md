@@ -4,6 +4,17 @@ All notable changes to FreeYourDisk are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] - 2026-06-25
+
+### Added
+
+- **Guided SMART tooling install.** The Disk health tab now detects which CLI
+  tools this machine needs — `nvme-cli` for NVMe drives, `smartmontools` for
+  SATA/SAS — and which are missing, then offers a **one-click privileged install**
+  using the host's package manager (apt / dnf / pacman / zypper). The package set
+  and manager are re-derived server-side and the helper enforces a hard-coded
+  package allowlist, so the UI can never trigger an arbitrary root install.
+
 ## [0.4.0] - 2026-06-25
 
 ### Added
@@ -83,6 +94,7 @@ dashboard.
   for privileged cleanup.
 - System tray icon with a disk-usage popover widget.
 
+[0.4.1]: https://github.com/QrCommunication/FreeYourDisk/releases/tag/v0.4.1
 [0.4.0]: https://github.com/QrCommunication/FreeYourDisk/releases/tag/v0.4.0
 [0.3.0]: https://github.com/QrCommunication/FreeYourDisk/releases/tag/v0.3.0
 [0.1.0]: https://github.com/QrCommunication/FreeYourDisk/releases/tag/v0.1.0

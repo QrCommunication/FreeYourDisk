@@ -62,7 +62,8 @@ blocked). App folders are excluded from the other scans.
 
 Per-disk SMART (health, power-on hours, temperature) via **nvme-cli** for NVMe
 drives (or `smartctl` for SATA), plus **real-time read/write throughput graphs**
-and system uptime.
+and system uptime. Missing tools are detected per machine and can be installed in
+**one click** via your package manager (apt / dnf / pacman / zypper).
 
 ### Task manager
 

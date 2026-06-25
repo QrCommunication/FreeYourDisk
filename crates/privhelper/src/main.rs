@@ -11,7 +11,7 @@
 //!
 //! Exit codes: 0 = success, 2 = invalid input, 3 = a path was refused.
 
-use core_ipc::{DeletionPlan, Destination, ExecutionReport, ItemError, SmartInfo};
+use core_ipc::{DeletionPlan, Destination, ExecutionReport, InstallReport, ItemError, SmartInfo};
 use core_trash::{delete_permanent, to_trash, validate, Zones};
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -20,6 +20,10 @@ use std::process::{Command, ExitCode};
 /// Root-owned zones this helper is ever allowed to touch. Hard-coded — never
 /// received from the (semi-trusted) caller.
 const ROOT_ZONES: &[&str] = &["/tmp", "/var/tmp"];
+
+/// The only packages this helper will ever install — hard-coded so a caller can
+/// never smuggle an arbitrary package name into a root install.
+const ALLOWED_PACKAGES: &[&str] = &["nvme-cli", "smartmontools"];
 
 fn write_report(report: &ExecutionReport) {
     if let Ok(json) = serde_json::to_string(report) {
@@ -137,10 +141,97 @@ fn run_smart(devices: &[String]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Build the install command(s) for a package manager. Each manager has a fixed
+/// command template — only the (allowlisted) package names vary. Returns `None`
+/// for an unknown manager.
+fn install_steps(manager: &str, packages: &[&str]) -> Option<Vec<Command>> {
+    let mut steps = Vec::new();
+    let push_install = |program: &str, prefix: &[&str], steps: &mut Vec<Command>| {
+        let mut cmd = Command::new(program);
+        cmd.args(prefix).arg("--");
+        for p in packages {
+            cmd.arg(p);
+        }
+        cmd.env("DEBIAN_FRONTEND", "noninteractive");
+        steps.push(cmd);
+    };
+    match manager {
+        "apt" => {
+            // Refresh first (a stale mirror would 404 the install); failure is
+            // tolerated below.
+            let mut update = Command::new("apt-get");
+            update
+                .args(["update", "-qq"])
+                .env("DEBIAN_FRONTEND", "noninteractive");
+            steps.push(update);
+            push_install(
+                "apt-get",
+                &["install", "-y", "--no-install-recommends"],
+                &mut steps,
+            );
+        }
+        "dnf" => push_install("dnf", &["install", "-y"], &mut steps),
+        "pacman" => push_install("pacman", &["-Sy", "--noconfirm", "--needed"], &mut steps),
+        "zypper" => push_install("zypper", &["--non-interactive", "install"], &mut steps),
+        _ => return None,
+    }
+    Some(steps)
+}
+
+/// `freeyourdisk-helper install-deps <manager> <pkg>...` — install SMART tools.
+fn run_install_deps(args: &[String]) -> ExitCode {
+    let emit = |success: bool, message: String| {
+        if let Ok(json) = serde_json::to_string(&InstallReport { success, message }) {
+            let _ = std::io::stdout().write_all(json.as_bytes());
+        }
+    };
+    let Some(manager) = args.first() else {
+        emit(false, "no package manager specified".into());
+        return ExitCode::from(2);
+    };
+    let packages: Vec<&str> = args[1..].iter().map(String::as_str).collect();
+    if packages.is_empty() {
+        emit(false, "no packages specified".into());
+        return ExitCode::from(2);
+    }
+    // Hard allowlist: refuse anything outside the known SMART tools.
+    if let Some(bad) = packages.iter().find(|p| !ALLOWED_PACKAGES.contains(p)) {
+        emit(false, format!("package not allowed: {bad}"));
+        return ExitCode::from(3);
+    }
+    let Some(steps) = install_steps(manager, &packages) else {
+        emit(false, format!("unsupported package manager: {manager}"));
+        return ExitCode::from(3);
+    };
+    for (i, mut step) in steps.into_iter().enumerate() {
+        let is_apt_update = manager == "apt" && i == 0;
+        match step.status() {
+            Ok(s) if s.success() => {}
+            Ok(_) if is_apt_update => { /* stale mirror — tolerate, install may still work */ }
+            Ok(s) => {
+                emit(
+                    false,
+                    format!("install failed (exit {})", s.code().unwrap_or(-1)),
+                );
+                return ExitCode::from(1);
+            }
+            Err(err) => {
+                emit(false, format!("failed to run {manager}: {err}"));
+                return ExitCode::from(1);
+            }
+        }
+    }
+    emit(true, format!("Installed: {}", packages.join(", ")));
+    ExitCode::SUCCESS
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(|s| s == "smart").unwrap_or(false) {
         return run_smart(&args[2..]);
+    }
+    if args.get(1).map(|s| s == "install-deps").unwrap_or(false) {
+        return run_install_deps(&args[2..]);
     }
 
     let mut input = String::new();

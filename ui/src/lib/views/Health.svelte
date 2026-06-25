@@ -11,12 +11,19 @@
     Thermometer,
     CircleNotch,
     Lightning,
+    DownloadSimple,
   } from "phosphor-svelte";
   import Chart from "../components/Chart.svelte";
-  import { api, type DiskInfo, type SmartInfo } from "../api";
+  import {
+    api,
+    type DiskInfo,
+    type SmartInfo,
+    type SmartDepsStatus,
+  } from "../api";
   import { humanizeBytes, humanizeUptime, humanizeRate } from "../format";
   import { cssColor } from "../theme";
   import { resolvedTheme } from "../settings";
+  import { toasts } from "../stores";
 
   const WINDOW = 40; // samples kept per disk (~48s at 1.2s)
   const INTERVAL = 1200;
@@ -25,6 +32,8 @@
   let disks = $state<DiskInfo[]>([]);
   let smart = $state<Record<string, SmartInfo>>({});
   let smartLoading = $state(false);
+  let deps = $state<SmartDepsStatus | null>(null);
+  let installing = $state(false);
 
   // Rolling throughput series per device (B/s).
   let series = $state<Record<string, { read: number[]; write: number[] }>>({});
@@ -72,6 +81,32 @@
       /* cancelled / unavailable */
     } finally {
       smartLoading = false;
+    }
+  }
+
+  async function loadDeps() {
+    try {
+      deps = await api.smartDepsStatus();
+    } catch {
+      deps = null;
+    }
+  }
+
+  async function installDeps() {
+    installing = true;
+    try {
+      const report = await api.installSmartDeps();
+      if (report.success) {
+        toasts.success($_("health.deps_installed"));
+        await loadDeps();
+        await loadSmart();
+      } else {
+        toasts.error(report.message || $_("health.deps_install_failed"));
+      }
+    } catch {
+      toasts.error($_("health.deps_install_failed"));
+    } finally {
+      installing = false;
     }
   }
 
@@ -125,6 +160,7 @@
 
   onMount(() => {
     tick();
+    loadDeps();
     timer = setInterval(tick, INTERVAL);
   });
   onDestroy(() => clearInterval(timer));
@@ -152,6 +188,46 @@
       {$_("health.no_disks")}
     </div>
   {:else}
+    {#if deps && deps.missing.length > 0}
+      <div
+        class="border-line bg-surface mb-5 flex flex-wrap items-center gap-3 rounded-xl border p-4"
+      >
+        <span
+          class="bg-accent-soft text-accent grid h-9 w-9 shrink-0 place-items-center rounded-lg"
+        >
+          <DownloadSimple size={18} weight="bold" />
+        </span>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium">{$_("health.deps_title")}</p>
+          <p class="text-muted text-xs">
+            {$_("health.deps_desc", {
+              values: { pkgs: deps.missing.join(", ") },
+            })}
+          </p>
+        </div>
+        {#if deps.can_install}
+          <button
+            class="bg-accent text-accent-ink inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold transition active:scale-95 disabled:opacity-60"
+            onclick={installDeps}
+            disabled={installing}
+          >
+            {#if installing}
+              <CircleNotch size={14} class="animate-spin" />{$_(
+                "health.deps_installing",
+              )}
+            {:else}
+              <DownloadSimple size={14} weight="bold" />{$_(
+                "health.deps_install",
+              )}
+            {/if}
+          </button>
+        {:else}
+          <code class="text-faint text-xs"
+            >sudo … install {deps.missing.join(" ")}</code
+          >
+        {/if}
+      </div>
+    {/if}
     <div class="mb-5 flex justify-end">
       <button
         class="border-line text-muted hover:text-ink inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition active:scale-95"

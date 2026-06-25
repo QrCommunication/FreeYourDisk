@@ -14,6 +14,7 @@ mod monitor;
 mod services;
 mod settings;
 mod shortcut;
+mod smartdeps;
 mod snapshot;
 mod state;
 mod taskmgr;
@@ -63,6 +64,8 @@ fn main() {
             commands::set_schedule,
             commands::health_overview,
             commands::disk_smart,
+            commands::smart_deps_status,
+            commands::install_smart_deps,
             commands::file_types,
             commands::home_total,
             commands::system_total,

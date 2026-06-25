@@ -67,7 +67,9 @@ d'applications sont exclus des autres scans.
 
 SMART par disque (état, heures d'allumage, température) via **nvme-cli** pour les
 disques NVMe (ou `smartctl` pour le SATA), plus des **graphes de débit
-lecture/écriture en temps réel** et la disponibilité du système.
+lecture/écriture en temps réel** et la disponibilité du système. Les outils
+manquants sont détectés selon la machine et installables en **un clic** via votre
+gestionnaire de paquets (apt / dnf / pacman / zypper).
 
 ### Gestionnaire de tâches
 

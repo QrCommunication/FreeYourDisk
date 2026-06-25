@@ -7,8 +7,10 @@
 
 use crate::services::make_service;
 use crate::state::AppState;
-use crate::{applications, execute, filetypes, health, settings, snapshot, taskmgr};
-use core_ipc::{DeletionPlan, ExecutionReport, MountUsage, ScanResult, ServiceId, SmartInfo};
+use crate::{applications, execute, filetypes, health, settings, smartdeps, snapshot, taskmgr};
+use core_ipc::{
+    DeletionPlan, ExecutionReport, InstallReport, MountUsage, ScanResult, ServiceId, SmartInfo,
+};
 use serde::Serialize;
 use tauri::State;
 
@@ -217,6 +219,37 @@ pub async fn disk_smart() -> Result<Vec<SmartInfo>, String> {
     tauri::async_runtime::spawn_blocking(|| execute::pkexec_smart(&health::disk_names()))
         .await
         .map_err(|e| e.to_string())
+}
+
+/// What SMART tooling this PC needs vs. has (drives the install prompt).
+#[tauri::command]
+pub fn smart_deps_status() -> smartdeps::SmartDepsStatus {
+    smartdeps::status()
+}
+
+/// Install the missing SMART tools (nvme-cli / smartmontools) for this PC via a
+/// single privileged helper call. The manager and package set are re-derived
+/// server-side — the UI cannot influence what gets installed.
+#[tauri::command]
+pub async fn install_smart_deps() -> Result<InstallReport, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let Some(manager) = smartdeps::detect_manager() else {
+            return InstallReport {
+                success: false,
+                message: "no supported package manager found".to_string(),
+            };
+        };
+        let packages = smartdeps::missing_packages();
+        if packages.is_empty() {
+            return InstallReport {
+                success: true,
+                message: "already installed".to_string(),
+            };
+        }
+        execute::pkexec_install_deps(&manager, &packages)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Load the last home-scan results (JSON), shown instantly on app open while a

@@ -4,7 +4,9 @@
 //! helper via `pkexec`. The helper invocation is injected so the routing logic
 //! is unit-testable without root.
 
-use core_ipc::{DeletionPlan, Destination, ExecutionReport, ItemError, ScanItem, SmartInfo};
+use core_ipc::{
+    DeletionPlan, Destination, ExecutionReport, InstallReport, ItemError, ScanItem, SmartInfo,
+};
 use core_trash::Zones;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -149,6 +151,28 @@ pub fn pkexec_smart(devices: &[String]) -> Vec<SmartInfo> {
     match cmd.output() {
         Ok(out) => serde_json::from_slice(&out.stdout).unwrap_or_default(),
         Err(_) => Vec::new(),
+    }
+}
+
+/// Install SMART tools as root via the helper (`install-deps <manager> <pkg>…`).
+/// The helper re-validates the package names against its own allowlist.
+pub fn pkexec_install_deps(manager: &str, packages: &[String]) -> InstallReport {
+    let mut cmd = Command::new("pkexec");
+    cmd.arg(resolve_helper_path())
+        .arg("install-deps")
+        .arg(manager);
+    for pkg in packages {
+        cmd.arg(pkg);
+    }
+    match cmd.output() {
+        Ok(out) => serde_json::from_slice(&out.stdout).unwrap_or(InstallReport {
+            success: false,
+            message: "installation cancelled or helper unavailable".to_string(),
+        }),
+        Err(err) => InstallReport {
+            success: false,
+            message: format!("pkexec spawn failed: {err}"),
+        },
     }
 }
 

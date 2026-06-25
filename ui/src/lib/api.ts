@@ -83,6 +83,21 @@ export interface SmartInfo {
   temperature_c: number | null;
 }
 
+export interface SmartDepsStatus {
+  nvme_needed: boolean;
+  nvme_installed: boolean;
+  sata_needed: boolean;
+  smartctl_installed: boolean;
+  manager: string | null;
+  missing: string[];
+  can_install: boolean;
+}
+
+export interface InstallReport {
+  success: boolean;
+  message: string;
+}
+
 export interface FileEntry {
   path: string;
   size_bytes: number;
@@ -173,6 +188,8 @@ export const api = {
     invoke<boolean>("set_schedule", { enabled }),
   healthOverview: () => invoke<HealthOverview>("health_overview"),
   diskSmart: () => invoke<SmartInfo[]>("disk_smart"),
+  smartDepsStatus: () => invoke<SmartDepsStatus>("smart_deps_status"),
+  installSmartDeps: () => invoke<InstallReport>("install_smart_deps"),
   fileTypes: () => invoke<TypeBucket[]>("file_types"),
   homeTotal: () => invoke<number>("home_total"),
   systemTotal: () => invoke<number>("system_total"),

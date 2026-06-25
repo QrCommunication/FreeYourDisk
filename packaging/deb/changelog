@@ -1,3 +1,11 @@
+free-your-disk (0.4.1) unstable; urgency=low
+
+  * Disk health: detect missing SMART tools (nvme-cli for NVMe, smartmontools
+    for SATA) and offer a one-click privileged install via the host package
+    manager (apt/dnf/pacman/zypper), with a hard-coded package allowlist.
+
+ -- rony <rony@rlconseil.net>  Thu, 25 Jun 2026 23:30:00 +0000
+
 free-your-disk (0.4.0) unstable; urgency=low
 
   * Task manager tab: real-time CPU/RAM/swap graph, per-core utilization

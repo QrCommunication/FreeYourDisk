@@ -107,6 +107,13 @@ pub struct SmartInfo {
     pub temperature_c: Option<i64>,
 }
 
+/// Result of a privileged dependency install (e.g. nvme-cli / smartmontools).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct InstallReport {
+    pub success: bool,
+    pub message: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
