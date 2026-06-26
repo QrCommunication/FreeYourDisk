@@ -358,10 +358,98 @@ fn detect_registry() -> Vec<AppEntry> {
     out
 }
 
-/// Full inventory, largest first. (MSIX merged in Task 2.)
+// ---- Windows: MSIX / Store apps via Get-AppxPackage --------------------------
+
+/// Absolute path so PATH/profile cannot redirect to a fake powershell.
+#[cfg(target_os = "windows")]
+const POWERSHELL: &str = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe";
+
+/// One row of the `Get-AppxPackage | ConvertTo-Json` output. Version and
+/// SignatureKind are forced to strings in the script (see SCRIPT below).
+#[cfg(target_os = "windows")]
+#[derive(serde::Deserialize)]
+struct AppxRaw {
+    #[serde(rename = "Name")]
+    name: Option<String>,
+    #[serde(rename = "PackageFullName")]
+    package_full_name: Option<String>,
+    #[serde(rename = "Version")]
+    version: Option<String>,
+    #[serde(rename = "InstallLocation")]
+    install_location: Option<String>,
+    #[serde(rename = "NonRemovable")]
+    non_removable: Option<bool>,
+    #[serde(rename = "SignatureKind")]
+    signature_kind: Option<String>,
+}
+
+/// MSIX packages for the current user. Skips OS framework packages
+/// (SignatureKind == "System"). protected = NonRemovable. size = best-effort dir
+/// size of InstallLocation. requires_root = false (per-user removal).
+#[cfg(target_os = "windows")]
+fn detect_msix() -> Vec<AppEntry> {
+    // `.ToString()` coerces System.Version and the SignatureKind enum to plain
+    // strings; otherwise ConvertTo-Json emits Version as a nested object.
+    const SCRIPT: &str = "Get-AppxPackage | Select-Object Name,PackageFullName,\
+@{N='Version';E={$_.Version.ToString()}},InstallLocation,NonRemovable,\
+@{N='SignatureKind';E={$_.SignatureKind.ToString()}} | ConvertTo-Json -Compress -Depth 3";
+    let Some(out) = run(
+        POWERSHELL,
+        &["-NoProfile", "-NonInteractive", "-Command", SCRIPT],
+    ) else {
+        return Vec::new();
+    };
+    let trimmed = out.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    // ConvertTo-Json emits a bare object for a single package, an array otherwise.
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+        return Vec::new();
+    };
+    let items = match value {
+        serde_json::Value::Array(a) => a,
+        other => vec![other],
+    };
+    let mut apps = Vec::new();
+    for item in items {
+        let Ok(pkg) = serde_json::from_value::<AppxRaw>(item) else {
+            continue;
+        };
+        let (Some(name), Some(pfn)) = (
+            pkg.name.filter(|s| !s.trim().is_empty()),
+            pkg.package_full_name.filter(|s| !s.trim().is_empty()),
+        ) else {
+            continue;
+        };
+        // OS frameworks are signed "System" — not user-facing apps.
+        if pkg.signature_kind.as_deref() == Some("System") {
+            continue;
+        }
+        let size = pkg
+            .install_location
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| core_scan::cache::cached_dir_total(Path::new(s)))
+            .unwrap_or(0);
+        apps.push(AppEntry {
+            id: format!("msix:{pfn}"),
+            name,
+            source: "msix".into(),
+            version: pkg.version.filter(|s| !s.trim().is_empty()),
+            size_bytes: size,
+            requires_root: false,
+            protected: pkg.non_removable.unwrap_or(false),
+        });
+    }
+    apps
+}
+
+/// Full inventory (registry + MSIX), largest first.
 #[cfg(target_os = "windows")]
 pub fn list() -> Vec<AppEntry> {
     let mut apps = detect_registry();
+    apps.extend(detect_msix());
     apps.sort_by_key(|a| std::cmp::Reverse(a.size_bytes));
     apps
 }
