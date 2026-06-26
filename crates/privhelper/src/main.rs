@@ -11,8 +11,8 @@
 //!
 //! Exit codes: 0 = success, 2 = invalid input, 3 = a path was refused.
 
-use core_ipc::{DeletionPlan, Destination, ExecutionReport, InstallReport, ItemError, SmartInfo};
-use core_trash::{delete_permanent, to_trash, validate, Zones};
+use core_ipc::{DeletionPlan, ExecutionReport, InstallReport, SmartInfo};
+use core_trash::Zones;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
@@ -249,33 +249,16 @@ fn main() -> ExitCode {
     };
 
     let zones = Zones(ROOT_ZONES.iter().map(PathBuf::from).collect());
-    let paths: Vec<PathBuf> = plan.items.iter().map(|item| item.path.clone()).collect();
-
-    // Pre-validate every path; refuse the whole batch on any escape.
-    let refusals: Vec<ItemError> = paths
-        .iter()
-        .filter_map(|path| match validate(path, &zones) {
-            Ok(_) => None,
-            Err(err) => Some(ItemError {
-                path: path.clone(),
-                message: err.to_string(),
-            }),
-        })
-        .collect();
-
-    if !refusals.is_empty() {
-        write_report(&ExecutionReport {
-            freed_bytes: 0,
-            deleted_count: 0,
-            errors: refusals,
-        });
-        return ExitCode::from(3);
+    // Validation + execution is the shared single source of truth (also used by
+    // the Windows elevated executor). All-or-nothing: any escape refuses the batch.
+    match core_trash::execute_root_plan(&plan, &zones) {
+        Ok(report) => {
+            write_report(&report);
+            ExitCode::SUCCESS
+        }
+        Err(refusal) => {
+            write_report(&refusal);
+            ExitCode::from(3)
+        }
     }
-
-    let report = match plan.destination {
-        Destination::Trash => to_trash(&paths, &zones),
-        Destination::Permanent => delete_permanent(&paths, &zones),
-    };
-    write_report(&report);
-    ExitCode::SUCCESS
 }
