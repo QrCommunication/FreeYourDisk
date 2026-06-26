@@ -28,6 +28,14 @@ fn main() {
     if args.iter().any(|arg| arg == "--headless") {
         std::process::exit(headless::run(&args));
     }
+    #[cfg(target_os = "windows")]
+    if let Some(token) = args
+        .iter()
+        .position(|a| a == "--apply")
+        .and_then(|i| args.get(i + 1))
+    {
+        std::process::exit(headless::apply_elevated(token));
+    }
 
     // Stay alive and responsive under memory pressure (best effort).
     taskmgr::raise_priority();

@@ -131,6 +131,41 @@ pub fn run(args: &[String]) -> i32 {
     0
 }
 
+/// Windows: the elevated child. Reads the plan staged by the un-elevated parent
+/// at `%TEMP%\fyd-apply-<token>-plan.json`, re-validates against the hard-coded
+/// Windows root zone (`%WINDIR%\Temp`), deletes, and writes the report to
+/// `%TEMP%\fyd-apply-<token>-report.json`. `token` is the parent PID (no spaces).
+#[cfg(target_os = "windows")]
+pub fn apply_elevated(token: &str) -> i32 {
+    use core_trash::Zones;
+    let tmp = std::env::temp_dir();
+    let plan_path = tmp.join(format!("fyd-apply-{token}-plan.json"));
+    let report_path = tmp.join(format!("fyd-apply-{token}-report.json"));
+
+    let Ok(raw) = std::fs::read_to_string(&plan_path) else {
+        return 2;
+    };
+    let Ok(plan) = serde_json::from_str::<core_ipc::DeletionPlan>(&raw) else {
+        return 2;
+    };
+
+    // Hard-coded Windows privileged zone (must match temp.rs's requires_root root).
+    let windir = std::env::var_os("WINDIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("C:\\Windows"));
+    let zones = Zones(vec![windir.join("Temp")]);
+
+    let report = match core_trash::execute_root_plan(&plan, &zones) {
+        Ok(report) => report,
+        Err(refusal) => refusal,
+    };
+    let json = serde_json::to_string(&report).unwrap_or_default();
+    if std::fs::write(&report_path, json).is_err() {
+        return 1;
+    }
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
