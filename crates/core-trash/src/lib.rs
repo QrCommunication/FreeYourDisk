@@ -16,7 +16,16 @@ pub struct Zones(pub Vec<PathBuf>);
 
 impl Zones {
     fn contains(&self, path: &Path) -> bool {
-        self.0.iter().any(|zone| path.starts_with(zone))
+        // Compare against each zone's *canonical* form so a plain zone matches a
+        // canonicalized candidate. `validate` resolves candidates to their real
+        // location (dunce strips Windows' \\?\ prefix and resolves macOS
+        // /tmp→/private/tmp); the zone must be resolved the same way or
+        // starts_with never matches. Falls back to the literal zone if it cannot
+        // be resolved (e.g. it does not exist on disk).
+        self.0.iter().any(|zone| {
+            let zone_real = dunce::canonicalize(zone).unwrap_or_else(|_| zone.clone());
+            path.starts_with(&zone_real)
+        })
     }
 }
 
