@@ -4,10 +4,11 @@
 
 **English** · [Français](README.fr.md)
 
-A modern Linux desktop utility that scans your disk and **safely** reclaims
-space: temporary files, oversized files, stale git worktrees, developer caches,
-**installed applications** and a **file-type breakdown** — around a 3D usage
-donut, with a recoverable-by-default deletion model.
+A modern **Linux and Windows** desktop utility that scans your disk and
+**safely** reclaims space: temporary files, oversized files, stale git
+worktrees, developer caches, **installed applications** and a **file-type
+breakdown** — around a 3D usage donut, with a recoverable-by-default deletion
+model.
 
 Built with **Tauri** (Rust core + WebView), licensed **GPL-3.0-or-later**.
 
@@ -156,6 +157,34 @@ cargo tauri build          # produces deb, rpm and AppImage bundles
 ```
 
 The standalone binary is at `target/release/freeyourdisk`.
+
+### Prerequisites (Windows 10 1803+ / 11 · x64)
+
+[WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) is
+required (pre-installed on Windows 11; the NSIS setup installs it automatically
+on Windows 10). Rust ([rustup.rs](https://rustup.rs)) and Node 22+ / pnpm are
+also required.
+
+```bash
+# Recommended for the Disk health section:
+winget install smartmontools          # puts smartctl on PATH
+```
+
+**Installing from a release:** download the `*-setup.exe` (unsigned NSIS
+installer) from the [Releases](../../releases) page. Windows SmartScreen may
+warn "Unknown publisher" — click **More info → Run anyway** to proceed.
+
+**Platform differences vs Linux:** privileged cleanup (system paths such as
+`%WINDIR%\Temp`) prompts a **UAC elevation** dialog instead of Polkit /
+`pkexec`. Scheduled cleanup uses a weekly **Task Scheduler** task instead of a
+systemd user timer.
+
+### Build a release / .exe installer (Windows)
+
+```bash
+pnpm --dir ui install && pnpm --dir ui build
+cargo tauri build --bundles nsis       # produces the NSIS installer
+```
 
 ## Project layout
 
