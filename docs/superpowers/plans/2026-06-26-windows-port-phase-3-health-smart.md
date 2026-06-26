@@ -219,6 +219,15 @@ git commit -m "feat(win): smartctl detection + winget install of smartmontools"
 
 ### Task 3: SMART read via elevated `--smart` executor
 
+> ⚠️ **SECURITY — SUPERSEDED SNIPPETS BELOW.** The code shown in this task was
+> hardened after implementation (adversarial review). Do NOT copy it verbatim:
+> (1) the elevated child resolves `smartctl` **only** from trusted absolute
+> Program Files paths — **never** the `else { "smartctl" }` PATH fallback shown
+> (binary-planting EoP); (2) the elevated-IPC temp token is a **CSPRNG random
+> nonce** (`elevation_token()` via `getrandom`), **not** the PID (predictable
+> `%TEMP%` path → TOCTOU/report-injection). See the shipped `headless.rs` /
+> `execute.rs` for the authoritative implementation.
+
 **Files:** Modify `src-tauri/src/headless.rs` (add `read_smart_elevated`), `src-tauri/src/main.rs` (dispatch `--smart`), `src-tauri/src/execute.rs` (Windows `pkexec_smart` real impl).
 
 **Interfaces:** Produces a working `execute::pkexec_smart(&[String]) -> Vec<SmartInfo>` on Windows (devices arg ignored — the elevated child self-discovers via `smartctl --scan-open`). Reuses the Phase-2 elevation IPC (numeric PID token, `%TEMP%\fyd-smart-<pid>-report.json`).

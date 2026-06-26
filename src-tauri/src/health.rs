@@ -204,7 +204,7 @@ mod platform {
         let mut seen = std::collections::HashSet::new();
         let mut out = Vec::new();
         for disk in Disks::new_with_refreshed_list().iter() {
-            // sysinfo lists volumes; dedupe by device name, keep physical-ish.
+            // sysinfo lists volumes (not physical disks); dedupe by device name.
             let name = disk.name().to_string_lossy().into_owned();
             let device = if name.is_empty() {
                 disk.mount_point().to_string_lossy().into_owned()

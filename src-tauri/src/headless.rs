@@ -134,11 +134,11 @@ pub fn run(args: &[String]) -> i32 {
 /// Windows: the elevated child. Reads the plan staged by the un-elevated parent
 /// at `%TEMP%\fyd-apply-<token>-plan.json`, re-validates against the hard-coded
 /// Windows root zone (`%WINDIR%\Temp`), deletes, and writes the report to
-/// `%TEMP%\fyd-apply-<token>-report.json`. `token` is the parent PID (no spaces).
+/// `%TEMP%\fyd-apply-<token>-report.json`. `token` is a random digit-only nonce.
 #[cfg(target_os = "windows")]
 pub fn apply_elevated(token: &str) -> i32 {
     use core_trash::Zones;
-    // Hardening: this runs ELEVATED. `token` (the parent PID) is interpolated
+    // Hardening: this runs ELEVATED. `token` (a random digit-only nonce) is interpolated
     // into a %TEMP% path — reject anything but ASCII digits so a crafted token
     // can never traverse out of %TEMP% (arbitrary admin file read/write).
     if token.is_empty() || !token.bytes().all(|b| b.is_ascii_digit()) {

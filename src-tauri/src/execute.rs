@@ -154,7 +154,7 @@ pub fn pkexec_helper(plan: &DeletionPlan) -> ExecutionReport {
 }
 
 /// Windows: relaunch THIS exe elevated (UAC) in headless `--apply` mode to run
-/// the root plan. Only the parent PID is passed as an argument (no spaces); both
+/// the root plan. Only a random digit-only token is passed as an argument; both
 /// sides derive `%TEMP%\fyd-apply-<token>-{plan,report}.json`. Elevation uses
 /// `powershell Start-Process -Verb RunAs -Wait` — the WinAPI-free analogue of the
 /// macOS osascript-admin path.
