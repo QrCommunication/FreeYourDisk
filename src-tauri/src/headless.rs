@@ -155,11 +155,15 @@ pub fn apply_elevated(token: &str) -> i32 {
         return 2;
     };
 
-    // Hard-coded Windows privileged zone (must match temp.rs's requires_root root).
-    let windir = std::env::var_os("WINDIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::PathBuf::from("C:\\Windows"));
-    let zones = Zones(vec![windir.join("Temp")]);
+    // Hard-coded, canonicalized privileged zone. NOT derived from %WINDIR%: env
+    // vars propagate across same-user UAC elevation and are attacker-influenceable
+    // (classic windir UAC-bypass vector) — an env-derived zone would be an
+    // admin-delete EoP. Canonicalize the trusted constant so the zone matches
+    // validate()'s canonical (\\?\-verbatim) candidate paths; otherwise
+    // starts_with() never matches and every item is silently refused (no-op).
+    let zone_base = std::path::Path::new("C:\\Windows\\Temp");
+    let zone = std::fs::canonicalize(zone_base).unwrap_or_else(|_| zone_base.to_path_buf());
+    let zones = Zones(vec![zone]);
 
     let report = match core_trash::execute_root_plan(&plan, &zones) {
         Ok(report) => report,

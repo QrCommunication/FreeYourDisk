@@ -29,11 +29,15 @@ fn main() {
         std::process::exit(headless::run(&args));
     }
     #[cfg(target_os = "windows")]
-    if let Some(token) = args
-        .iter()
-        .position(|a| a == "--apply")
-        .and_then(|i| args.get(i + 1))
-    {
+    if args.iter().any(|a| a == "--apply") {
+        // `--apply` always terminates here (never falls through to the GUI). A
+        // missing/invalid token is rejected by apply_elevated's digit guard.
+        let token = args
+            .iter()
+            .position(|a| a == "--apply")
+            .and_then(|i| args.get(i + 1))
+            .map(String::as_str)
+            .unwrap_or("");
         std::process::exit(headless::apply_elevated(token));
     }
 

@@ -186,7 +186,9 @@ pub fn pkexec_helper(plan: &DeletionPlan) -> ExecutionReport {
         "Start-Process -FilePath '{exe_ps}' -ArgumentList '--apply','{token}' -Verb RunAs -Wait -WindowStyle Hidden"
     );
 
-    let status = Command::new("powershell")
+    // Absolute path, not a PATH lookup: a PATH-poisoned powershell.exe could
+    // control the RunAs target shown in the UAC prompt. Fixed on Win10/11.
+    let status = Command::new("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
         .status();
 

@@ -312,4 +312,22 @@ mod tests {
         assert!(result.is_ok());
         assert!(!f.exists(), "in-zone file deleted");
     }
+
+    // Regression guard for the Phase-2 Windows `\\?\`-verbatim mismatch:
+    // validate() canonicalizes the candidate to a verbatim path, so a zone must
+    // ALSO be canonicalized or starts_with() never matches — which would make the
+    // elevated privileged cleanup a silent no-op. Runs on Windows CI via
+    // `cargo test -p core-trash`.
+    #[cfg(windows)]
+    #[test]
+    fn validate_accepts_in_canonicalized_zone_on_windows() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("junk.tmp");
+        std::fs::write(&f, b"x").unwrap();
+        let zone = Zones(vec![std::fs::canonicalize(dir.path()).unwrap()]);
+        assert!(
+            validate(&f, &zone).is_ok(),
+            "a canonicalized zone must accept an in-zone path"
+        );
+    }
 }
