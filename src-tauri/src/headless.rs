@@ -138,6 +138,12 @@ pub fn run(args: &[String]) -> i32 {
 #[cfg(target_os = "windows")]
 pub fn apply_elevated(token: &str) -> i32 {
     use core_trash::Zones;
+    // Hardening: this runs ELEVATED. `token` (the parent PID) is interpolated
+    // into a %TEMP% path — reject anything but ASCII digits so a crafted token
+    // can never traverse out of %TEMP% (arbitrary admin file read/write).
+    if token.is_empty() || !token.bytes().all(|b| b.is_ascii_digit()) {
+        return 2;
+    }
     let tmp = std::env::temp_dir();
     let plan_path = tmp.join(format!("fyd-apply-{token}-plan.json"));
     let report_path = tmp.join(format!("fyd-apply-{token}-report.json"));
