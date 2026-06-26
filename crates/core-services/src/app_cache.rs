@@ -131,6 +131,16 @@ impl Service for AppCacheService {
             Self::collect(&h.join("Library/Application Support"), 4, &mut items);
         }
 
+        // 6. Windows: Chromium/Electron app caches under %LOCALAPPDATA% and
+        //    %APPDATA% (e.g. Chrome/Edge/Electron Cache, Code Cache, GPUCache).
+        //    %LOCALAPPDATA% needs depth 5: Windows browsers nest the cache one
+        //    level deeper than macOS — Google\Chrome\User Data\Default\Cache.
+        #[cfg(target_os = "windows")]
+        {
+            Self::collect(&h.join("AppData/Local"), 5, &mut items);
+            Self::collect(&h.join("AppData/Roaming"), 4, &mut items);
+        }
+
         let total_bytes = items.iter().map(|item| item.size_bytes).sum();
         ScanResult {
             service: ServiceId::AppCache,

@@ -217,71 +217,98 @@ pub async fn home_total(state: State<'_, AppState>) -> Result<u64, String> {
     Ok(total)
 }
 
-/// Measured OS footprint: the real system size (~68 GB), as opposed to the
-/// `used − home` residual which wrongly absorbs ext4 reserved blocks.
+/// Measured OS footprint (real system size), as opposed to the `used − home`
+/// residual which wrongly absorbs reserved blocks.
 ///
-/// Delegates to `du` for correctness: it deduplicates hardlinks, counts true
-/// block usage and stays on one filesystem (`-x`) — replicating that in a hand
-/// rolled walker is error-prone (snaps/Docker overlays/sparse files all skew
-/// it). `/snap` is excluded: it mounts decompressed squashfs whose real on-disk
-/// cost (the compressed images) already lives under `/var`.
+/// unix: delegates to `du` (hardlink-dedup, true blocks, single-fs `-x`).
+/// Windows: `du` is absent, so we sum the system roots with the internal
+/// mtime-cached walker (same engine as `home_total`). Unreadable subtrees
+/// (ACL-locked) are skipped by the walker — an approximation, like `du`.
 #[tauri::command]
 pub async fn system_total() -> Result<u64, String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        #[cfg(not(target_os = "macos"))]
-        const ROOTS: &[&str] = &[
-            "/usr",
-            "/var",
-            "/opt",
-            "/boot",
-            "/srv",
-            "/root",
-            "/swapfile",
-        ];
-        #[cfg(target_os = "macos")]
-        const ROOTS: &[&str] = &[
-            "/System",
-            "/Library",
-            "/usr",
-            "/private/var",
-            "/opt",
-            "/Applications",
-        ];
+    tauri::async_runtime::spawn_blocking(measure_system)
+        .await
+        .map_err(|e| e.to_string())
+}
 
-        let present: Vec<&str> = ROOTS
-            .iter()
-            .copied()
-            .filter(|p| std::path::Path::new(p).exists())
-            .collect();
-        if present.is_empty() {
-            return 0;
-        }
+#[cfg(not(target_os = "windows"))]
+fn measure_system() -> u64 {
+    #[cfg(target_os = "linux")]
+    const ROOTS: &[&str] = &[
+        "/usr",
+        "/var",
+        "/opt",
+        "/boot",
+        "/srv",
+        "/root",
+        "/swapfile",
+    ];
+    #[cfg(target_os = "macos")]
+    const ROOTS: &[&str] = &[
+        "/System",
+        "/Library",
+        "/usr",
+        "/private/var",
+        "/opt",
+        "/Applications",
+    ];
 
-        // GNU du reports bytes (`--block-size=1`); BSD du (macOS) only does
-        // 1024-byte blocks (`-k`), so scale there.
-        #[cfg(not(target_os = "macos"))]
-        let (du_args, mult): (&[&str], u64) = (&["-scx", "--block-size=1"], 1);
-        #[cfg(target_os = "macos")]
-        let (du_args, mult): (&[&str], u64) = (&["-scxk"], 1024);
+    let present: Vec<&str> = ROOTS
+        .iter()
+        .copied()
+        .filter(|p| std::path::Path::new(p).exists())
+        .collect();
+    if present.is_empty() {
+        return 0;
+    }
 
-        let Ok(out) = std::process::Command::new("du")
-            .args(du_args)
-            .args(&present)
-            .output()
-        else {
-            return 0;
-        };
-        // The last line is "<n>\ttotal".
-        String::from_utf8_lossy(&out.stdout)
-            .lines()
-            .last()
-            .and_then(|line| line.split_whitespace().next())
-            .and_then(|n| n.parse::<u64>().ok())
-            .map(|v| v * mult)
-            .unwrap_or(0)
-    })
-    .await
-    .map_err(|e| e.to_string())
+    // GNU du reports bytes (`--block-size=1`); BSD du (macOS) only does
+    // 1024-byte blocks (`-k`), so scale there.
+    #[cfg(target_os = "linux")]
+    let (du_args, mult): (&[&str], u64) = (&["-scx", "--block-size=1"], 1);
+    #[cfg(target_os = "macos")]
+    let (du_args, mult): (&[&str], u64) = (&["-scxk"], 1024);
+
+    let Ok(out) = std::process::Command::new("du")
+        .args(du_args)
+        .args(&present)
+        .output()
+    else {
+        return 0;
+    };
+    // The last line is "<n>\ttotal".
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .last()
+        .and_then(|line| line.split_whitespace().next())
+        .and_then(|n| n.parse::<u64>().ok())
+        .map(|v| v * mult)
+        .unwrap_or(0)
+}
+
+#[cfg(target_os = "windows")]
+fn measure_system() -> u64 {
+    // No `du` on Windows: sum the real system roots with the internal walker.
+    // Derive the roots from the environment so non-C: installs are counted
+    // (mirrors the %WINDIR% pattern in temp.rs); fall back to the C:\ defaults.
+    fn env_root(var: &str, fallback: &str) -> std::path::PathBuf {
+        std::env::var_os(var)
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from(fallback))
+    }
+    let roots = [
+        env_root("SystemRoot", "C:\\Windows"),
+        env_root("ProgramFiles", "C:\\Program Files"),
+        env_root("ProgramFiles(x86)", "C:\\Program Files (x86)"),
+        env_root("ProgramData", "C:\\ProgramData"),
+    ];
+    let total: u64 = roots
+        .iter()
+        .filter(|p| p.exists())
+        .map(|p| core_scan::cache::cached_dir_total(p))
+        .sum();
+    core_scan::cache::save(&settings::config_dir().join("dir-cache.json"));
+    total
 }
 
 /// SMART for every physical disk, via one privileged (pkexec) helper call.

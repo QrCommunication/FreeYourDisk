@@ -913,6 +913,7 @@ dependencies = [
  "core-scan",
  "core-services",
  "core-trash",
+ "dirs",
  "jwalk",
  "libc",
  "serde",
