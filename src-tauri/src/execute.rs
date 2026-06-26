@@ -8,9 +8,14 @@
 use core_ipc::InstallReport;
 use core_ipc::{DeletionPlan, Destination, ExecutionReport, ItemError, ScanItem, SmartInfo};
 use core_trash::Zones;
+// `Write`/`Stdio` are used only by the Linux pkexec helper (stdin-piped IPC);
+// macOS (osascript) and Windows (PowerShell) stage the plan via temp files.
+#[cfg(target_os = "linux")]
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
+#[cfg(target_os = "linux")]
+use std::process::Stdio;
 
 /// Installed location of the privileged helper.
 pub const HELPER_PATH: &str = "/usr/lib/freeyourdisk/freeyourdisk-helper";
