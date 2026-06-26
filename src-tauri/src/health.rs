@@ -23,7 +23,7 @@ pub struct DiskInfo {
 }
 
 /// Host uptime in seconds.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub fn host_uptime_secs() -> u64 {
     std::fs::read_to_string("/proc/uptime")
         .ok()
@@ -31,6 +31,11 @@ pub fn host_uptime_secs() -> u64 {
         .and_then(|x| x.parse::<f64>().ok())
         .map(|f| f as u64)
         .unwrap_or(0)
+}
+
+#[cfg(target_os = "windows")]
+pub fn host_uptime_secs() -> u64 {
+    sysinfo::System::uptime()
 }
 
 #[cfg(target_os = "macos")]
@@ -41,7 +46,7 @@ pub fn host_uptime_secs() -> u64 {
 // ---------------------------------------------------------------------------
 // Linux: /proc + /sys
 // ---------------------------------------------------------------------------
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 mod platform {
     use super::DiskInfo;
     use std::fs;
@@ -184,6 +189,41 @@ mod platform {
             .iter()
             .filter_map(|id| info(id))
             .collect()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Windows: sysinfo (model/rotational not exposed; throughput deferred = 0).
+// ---------------------------------------------------------------------------
+#[cfg(target_os = "windows")]
+mod platform {
+    use super::DiskInfo;
+    use sysinfo::Disks;
+
+    pub fn disks() -> Vec<DiskInfo> {
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for disk in Disks::new_with_refreshed_list().iter() {
+            // sysinfo lists volumes (not physical disks); dedupe by device name.
+            let name = disk.name().to_string_lossy().into_owned();
+            let device = if name.is_empty() {
+                disk.mount_point().to_string_lossy().into_owned()
+            } else {
+                name
+            };
+            if !seen.insert(device.clone()) {
+                continue;
+            }
+            out.push(DiskInfo {
+                device,
+                model: None,
+                size_bytes: disk.total_space(),
+                rotational: false,
+                read_bytes: 0,
+                write_bytes: 0,
+            });
+        }
+        out
     }
 }
 

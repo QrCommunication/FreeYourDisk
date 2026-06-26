@@ -17,11 +17,14 @@ use std::process::Command;
 #[cfg(target_os = "linux")]
 use std::process::Stdio;
 
-/// Installed location of the privileged helper.
+/// Installed location of the privileged helper (Linux/macOS only — Windows
+/// elevates in-process via PowerShell and never invokes the helper binary).
+#[cfg(not(target_os = "windows"))]
 pub const HELPER_PATH: &str = "/usr/lib/freeyourdisk/freeyourdisk-helper";
 
 /// Resolve the helper binary: the installed path in production, or a sibling of
-/// the running executable when developing (`cargo tauri dev`).
+/// the running executable when developing (`cargo tauri dev`). Linux/macOS only.
+#[cfg(not(target_os = "windows"))]
 pub fn resolve_helper_path() -> PathBuf {
     let installed = PathBuf::from(HELPER_PATH);
     if installed.exists() {
@@ -154,8 +157,8 @@ pub fn pkexec_helper(plan: &DeletionPlan) -> ExecutionReport {
 }
 
 /// Windows: relaunch THIS exe elevated (UAC) in headless `--apply` mode to run
-/// the root plan. Only the parent PID is passed as an argument (no spaces); both
-/// sides derive `%TEMP%\fyd-apply-<pid>-{plan,report}.json`. Elevation uses
+/// the root plan. Only a random digit-only token is passed as an argument; both
+/// sides derive `%TEMP%\fyd-apply-<token>-{plan,report}.json`. Elevation uses
 /// `powershell Start-Process -Verb RunAs -Wait` — the WinAPI-free analogue of the
 /// macOS osascript-admin path.
 #[cfg(target_os = "windows")]
@@ -164,7 +167,7 @@ pub fn pkexec_helper(plan: &DeletionPlan) -> ExecutionReport {
         Ok(json) => json,
         Err(err) => return err_report(plan, &err.to_string()),
     };
-    let token = std::process::id().to_string();
+    let token = elevation_token();
     let tmp = std::env::temp_dir();
     let plan_path = tmp.join(format!("fyd-apply-{token}-plan.json"));
     let report_path = tmp.join(format!("fyd-apply-{token}-report.json"));
@@ -223,11 +226,33 @@ pub fn pkexec_smart(devices: &[String]) -> Vec<SmartInfo> {
     }
 }
 
-/// Windows SMART is implemented in Phase 3 (bundled smartctl.exe via the elevated
-/// executor). Until then, return no SMART data (the UI degrades gracefully).
 #[cfg(target_os = "windows")]
 pub fn pkexec_smart(_devices: &[String]) -> Vec<SmartInfo> {
-    Vec::new()
+    // The elevated child self-discovers devices via `smartctl --scan-open`, so
+    // the caller's device list is unused. One UAC prompt; report read from file.
+    let token = elevation_token();
+    let report_path = std::env::temp_dir().join(format!("fyd-smart-{token}-report.json"));
+    let _ = std::fs::remove_file(&report_path);
+
+    let Ok(exe) = std::env::current_exe() else {
+        return Vec::new();
+    };
+    let exe_ps = exe.to_string_lossy().replace('\'', "''");
+    let ps = format!(
+        "Start-Process -FilePath '{exe_ps}' -ArgumentList '--smart','{token}' -Verb RunAs -Wait -WindowStyle Hidden"
+    );
+    let status = Command::new("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
+        .status();
+    let result = match status {
+        Ok(s) if s.success() => std::fs::read_to_string(&report_path)
+            .ok()
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    let _ = std::fs::remove_file(&report_path);
+    result
 }
 
 // ---------------------------------------------------------------------------
@@ -300,7 +325,8 @@ pub fn pkexec_smart(devices: &[String]) -> Vec<SmartInfo> {
 /// Install SMART tools as root via the helper (`install-deps <manager> <pkg>…`).
 /// The helper re-validates the package names against its own allowlist.
 /// (Linux only — macOS installs via Homebrew at user level.)
-#[cfg(not(target_os = "macos"))]
+// Linux only: macOS installs via brew, Windows via winget (winget_install_smart).
+#[cfg(target_os = "linux")]
 pub fn pkexec_install_deps(manager: &str, packages: &[String]) -> InstallReport {
     let mut cmd = Command::new("pkexec");
     cmd.arg(resolve_helper_path())
@@ -318,6 +344,54 @@ pub fn pkexec_install_deps(manager: &str, packages: &[String]) -> InstallReport 
             success: false,
             message: format!("pkexec spawn failed: {err}"),
         },
+    }
+}
+
+/// Windows: install smartmontools via winget. `--id` is a fixed allowlisted
+/// package; nothing user-controlled reaches the command line.
+#[cfg(target_os = "windows")]
+pub fn winget_install_smart() -> InstallReport {
+    let out = Command::new("winget")
+        .args([
+            "install",
+            "--id",
+            "smartmontools.smartmontools",
+            "--accept-source-agreements",
+            "--accept-package-agreements",
+            "--silent",
+        ])
+        .output();
+    match out {
+        Ok(o) if o.status.success() => InstallReport {
+            success: true,
+            message: "Installed: smartmontools".to_string(),
+        },
+        Ok(o) => InstallReport {
+            success: false,
+            message: String::from_utf8_lossy(&o.stderr)
+                .lines()
+                .last()
+                .unwrap_or("winget install failed")
+                .to_string(),
+        },
+        Err(err) => InstallReport {
+            success: false,
+            message: format!("failed to run winget: {err}"),
+        },
+    }
+}
+
+/// A random, unguessable token (20 decimal digits) for the elevated-IPC temp
+/// file names. Random — not the PID — so a local same-user attacker cannot
+/// pre-create a junction/file at a predictable path (TOCTOU) to redirect the
+/// admin write or inject a forged report. Digit-only to satisfy the elevated
+/// child's token guard. Falls back to the PID only if the OS RNG is unavailable.
+#[allow(dead_code)] // used only by the Windows elevated executors
+fn elevation_token() -> String {
+    let mut buf = [0u8; 8];
+    match getrandom::getrandom(&mut buf) {
+        Ok(()) => format!("{:020}", u64::from_le_bytes(buf)),
+        Err(_) => std::process::id().to_string(),
     }
 }
 

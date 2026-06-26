@@ -32,27 +32,39 @@ fn has_binary(bin: &str) -> bool {
     let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).collect())
         .unwrap_or_default();
-    for extra in [
+    #[cfg(not(target_os = "windows"))]
+    let extra = [
         "/usr/bin",
         "/bin",
         "/usr/sbin",
         "/sbin",
         "/usr/local/bin",
         "/usr/local/sbin",
-        "/opt/homebrew/bin", // macOS / Apple Silicon Homebrew
+        "/opt/homebrew/bin",
         "/opt/homebrew/sbin",
-    ] {
-        let pb = PathBuf::from(extra);
+    ];
+    #[cfg(target_os = "windows")]
+    let extra = [
+        "C:\\Program Files\\smartmontools\\bin",
+        "C:\\Program Files (x86)\\smartmontools\\bin",
+    ];
+    for dir in extra {
+        let pb = PathBuf::from(dir);
         if !dirs.contains(&pb) {
             dirs.push(pb);
         }
     }
-    dirs.iter().any(|d| d.join(bin).is_file())
+    // On Windows, executables carry a .exe suffix.
+    #[cfg(target_os = "windows")]
+    let found = dirs.iter().any(|d| d.join(format!("{bin}.exe")).is_file());
+    #[cfg(not(target_os = "windows"))]
+    let found = dirs.iter().any(|d| d.join(bin).is_file());
+    found
 }
 
 /// Detect the system package manager by its binary (most reliable across
 /// derivatives — an Ubuntu flavour still has `apt-get`).
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub fn detect_manager() -> Option<String> {
     for (bin, key) in [
         ("apt-get", "apt"),
@@ -65,6 +77,16 @@ pub fn detect_manager() -> Option<String> {
         }
     }
     None
+}
+
+/// Windows uses winget (App Installer, present on Win10 1809+/Win11).
+#[cfg(target_os = "windows")]
+pub fn detect_manager() -> Option<String> {
+    if has_binary("winget") {
+        Some("winget".to_string())
+    } else {
+        None
+    }
 }
 
 /// macOS uses Homebrew. (Apple Silicon installs it under /opt/homebrew/bin.)
@@ -84,13 +106,16 @@ pub fn status() -> SmartDepsStatus {
     // `diskN`, so we just key off "any disk present → smartmontools".
     #[cfg(target_os = "macos")]
     let (nvme_needed, sata_needed) = (false, !disks.is_empty());
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     let (nvme_needed, sata_needed) = (
         disks.iter().any(|d| d.device.starts_with("nvme")),
         disks
             .iter()
             .any(|d| d.device.starts_with("sd") || d.device.starts_with("hd")),
     );
+    // On Windows, smartmontools covers NVMe natively — no separate nvme-cli needed.
+    #[cfg(target_os = "windows")]
+    let (nvme_needed, sata_needed) = (false, !disks.is_empty());
 
     let nvme_installed = has_binary("nvme");
     let smartctl_installed = has_binary("smartctl");

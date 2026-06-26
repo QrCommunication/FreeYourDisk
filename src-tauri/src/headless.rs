@@ -134,11 +134,11 @@ pub fn run(args: &[String]) -> i32 {
 /// Windows: the elevated child. Reads the plan staged by the un-elevated parent
 /// at `%TEMP%\fyd-apply-<token>-plan.json`, re-validates against the hard-coded
 /// Windows root zone (`%WINDIR%\Temp`), deletes, and writes the report to
-/// `%TEMP%\fyd-apply-<token>-report.json`. `token` is the parent PID (no spaces).
+/// `%TEMP%\fyd-apply-<token>-report.json`. `token` is a random digit-only nonce.
 #[cfg(target_os = "windows")]
 pub fn apply_elevated(token: &str) -> i32 {
     use core_trash::Zones;
-    // Hardening: this runs ELEVATED. `token` (the parent PID) is interpolated
+    // Hardening: this runs ELEVATED. `token` (a random digit-only nonce) is interpolated
     // into a %TEMP% path — reject anything but ASCII digits so a crafted token
     // can never traverse out of %TEMP% (arbitrary admin file read/write).
     if token.is_empty() || !token.bytes().all(|b| b.is_ascii_digit()) {
@@ -172,6 +172,104 @@ pub fn apply_elevated(token: &str) -> i32 {
         return 1;
     }
     0
+}
+
+/// Windows: the elevated SMART reader. Discovers devices with
+/// `smartctl --scan-open` and reads each with `smartctl -a -j`, writing a
+/// Vec<SmartInfo> to %TEMP%\fyd-smart-<token>-report.json. `token` = random nonce.
+#[cfg(target_os = "windows")]
+pub fn read_smart_elevated(token: &str) -> i32 {
+    use core_ipc::SmartInfo;
+    if token.is_empty() || !token.bytes().all(|b| b.is_ascii_digit()) {
+        return 2;
+    }
+    let report_path = std::env::temp_dir().join(format!("fyd-smart-{token}-report.json"));
+
+    // Elevated context: resolve smartctl ONLY from trusted absolute install
+    // locations. NEVER fall back to PATH — a planted smartctl.exe on a PATH dir
+    // would execute as admin (binary-planting EoP). Absent → SMART unavailable.
+    let smartctl = match [
+        "C:\\Program Files\\smartmontools\\bin\\smartctl.exe",
+        "C:\\Program Files (x86)\\smartmontools\\bin\\smartctl.exe",
+    ]
+    .into_iter()
+    .find(|p| std::path::Path::new(p).is_file())
+    {
+        Some(path) => path.to_string(),
+        None => {
+            // smartmontools not installed → no SMART data (expected). Surface a
+            // write failure (exit 1) rather than masking it as success.
+            return if std::fs::write(&report_path, "[]").is_ok() {
+                0
+            } else {
+                1
+            };
+        }
+    };
+
+    let scan = std::process::Command::new(&smartctl)
+        .args(["--scan-open", "-j"])
+        .output();
+    let mut results: Vec<SmartInfo> = Vec::new();
+    if let Ok(out) = scan {
+        if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&out.stdout) {
+            if let Some(devices) = json.get("devices").and_then(|d| d.as_array()) {
+                for dev in devices {
+                    let Some(name) = dev.get("name").and_then(|n| n.as_str()) else {
+                        continue;
+                    };
+                    results.push(read_one_smart(&smartctl, name));
+                }
+            }
+        }
+    }
+    let json = serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string());
+    if std::fs::write(&report_path, json).is_err() {
+        return 1;
+    }
+    0
+}
+
+/// Read SMART for one device token via `smartctl -a -j`.
+#[cfg(target_os = "windows")]
+fn read_one_smart(smartctl: &str, device: &str) -> core_ipc::SmartInfo {
+    use core_ipc::SmartInfo;
+    let unavailable = SmartInfo {
+        device: device.to_string(),
+        available: false,
+        passed: None,
+        power_on_hours: None,
+        temperature_c: None,
+    };
+    let Ok(out) = std::process::Command::new(smartctl)
+        .args(["-a", "-j", device])
+        .output()
+    else {
+        return unavailable;
+    };
+    let Ok(json) = serde_json::from_slice::<serde_json::Value>(&out.stdout) else {
+        return unavailable;
+    };
+    let passed = json
+        .get("smart_status")
+        .and_then(|s| s.get("passed"))
+        .and_then(|v| v.as_bool());
+    let power_on_hours = json
+        .get("power_on_time")
+        .and_then(|p| p.get("hours"))
+        .and_then(|v| v.as_u64());
+    let temperature_c = json
+        .get("temperature")
+        .and_then(|t| t.get("current"))
+        .and_then(|v| v.as_i64());
+    let available = passed.is_some() || power_on_hours.is_some() || temperature_c.is_some();
+    SmartInfo {
+        device: device.to_string(),
+        available,
+        passed,
+        power_on_hours,
+        temperature_c,
+    }
 }
 
 #[cfg(test)]
