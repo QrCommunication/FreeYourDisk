@@ -40,6 +40,16 @@ fn main() {
             .unwrap_or("");
         std::process::exit(headless::apply_elevated(token));
     }
+    #[cfg(target_os = "windows")]
+    if args.iter().any(|a| a == "--smart") {
+        let token = args
+            .iter()
+            .position(|a| a == "--smart")
+            .and_then(|i| args.get(i + 1))
+            .map(String::as_str)
+            .unwrap_or("");
+        std::process::exit(headless::read_smart_elevated(token));
+    }
 
     // Stay alive and responsive under memory pressure (best effort).
     taskmgr::raise_priority();

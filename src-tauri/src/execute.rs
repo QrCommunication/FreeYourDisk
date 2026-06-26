@@ -223,11 +223,33 @@ pub fn pkexec_smart(devices: &[String]) -> Vec<SmartInfo> {
     }
 }
 
-/// Windows SMART is implemented in Phase 3 (bundled smartctl.exe via the elevated
-/// executor). Until then, return no SMART data (the UI degrades gracefully).
 #[cfg(target_os = "windows")]
 pub fn pkexec_smart(_devices: &[String]) -> Vec<SmartInfo> {
-    Vec::new()
+    // The elevated child self-discovers devices via `smartctl --scan-open`, so
+    // the caller's device list is unused. One UAC prompt; report read from file.
+    let token = std::process::id().to_string();
+    let report_path = std::env::temp_dir().join(format!("fyd-smart-{token}-report.json"));
+    let _ = std::fs::remove_file(&report_path);
+
+    let Ok(exe) = std::env::current_exe() else {
+        return Vec::new();
+    };
+    let exe_ps = exe.to_string_lossy().replace('\'', "''");
+    let ps = format!(
+        "Start-Process -FilePath '{exe_ps}' -ArgumentList '--smart','{token}' -Verb RunAs -Wait -WindowStyle Hidden"
+    );
+    let status = Command::new("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
+        .status();
+    let result = match status {
+        Ok(s) if s.success() => std::fs::read_to_string(&report_path)
+            .ok()
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    let _ = std::fs::remove_file(&report_path);
+    result
 }
 
 // ---------------------------------------------------------------------------
