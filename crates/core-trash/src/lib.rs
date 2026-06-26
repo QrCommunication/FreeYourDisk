@@ -146,6 +146,7 @@ mod tests {
         ));
     }
 
+    #[cfg(unix)] // uses std::os::unix::fs::symlink
     #[test]
     fn validate_rejects_symlink_escaping_zone() {
         let dir = tempfile::tempdir().unwrap();
