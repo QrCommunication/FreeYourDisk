@@ -344,7 +344,7 @@ pub async fn install_smart_deps() -> Result<InstallReport, String> {
             smartdeps::brew_install(&packages)
         }
         // Linux: privileged package manager via the pkexec helper.
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "linux")]
         {
             let Some(manager) = smartdeps::detect_manager() else {
                 return InstallReport {
@@ -353,6 +353,11 @@ pub async fn install_smart_deps() -> Result<InstallReport, String> {
                 };
             };
             execute::pkexec_install_deps(&manager, &packages)
+        }
+        // Windows: winget (App Installer, ships with Win10 1809+/Win11).
+        #[cfg(target_os = "windows")]
+        {
+            execute::winget_install_smart()
         }
     })
     .await

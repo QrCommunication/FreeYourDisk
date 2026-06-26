@@ -321,6 +321,40 @@ pub fn pkexec_install_deps(manager: &str, packages: &[String]) -> InstallReport 
     }
 }
 
+/// Windows: install smartmontools via winget. `--id` is a fixed allowlisted
+/// package; nothing user-controlled reaches the command line.
+#[cfg(target_os = "windows")]
+pub fn winget_install_smart() -> InstallReport {
+    let out = Command::new("winget")
+        .args([
+            "install",
+            "--id",
+            "smartmontools.smartmontools",
+            "--accept-source-agreements",
+            "--accept-package-agreements",
+            "--silent",
+        ])
+        .output();
+    match out {
+        Ok(o) if o.status.success() => InstallReport {
+            success: true,
+            message: "Installed: smartmontools".to_string(),
+        },
+        Ok(o) => InstallReport {
+            success: false,
+            message: String::from_utf8_lossy(&o.stderr)
+                .lines()
+                .last()
+                .unwrap_or("winget install failed")
+                .to_string(),
+        },
+        Err(err) => InstallReport {
+            success: false,
+            message: format!("failed to run winget: {err}"),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
