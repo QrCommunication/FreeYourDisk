@@ -110,7 +110,13 @@ export interface TypeBucket {
   top: FileEntry[];
 }
 
-export type AppSource = "apt" | "flatpak" | "snap" | "appimage";
+export type AppSource =
+  | "apt"
+  | "flatpak"
+  | "snap"
+  | "appimage"
+  | "registry"
+  | "msix";
 
 export interface AppEntry {
   id: string;

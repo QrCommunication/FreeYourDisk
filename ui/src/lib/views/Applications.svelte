@@ -30,6 +30,8 @@
     flatpak: "#4a90d9",
     snap: "#f5732b",
     appimage: "#f7a800",
+    registry: "#0078d4", // Windows blue
+    msix: "#5c2d91", // Microsoft purple
   };
 
   const protectedSet = $derived(
