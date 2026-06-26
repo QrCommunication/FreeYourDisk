@@ -745,6 +745,96 @@ pub fn uninstall(ids: &[String]) -> AppActionReport {
     report
 }
 
+/// MSIX PackageFullName shape guard: alphanumerics, dot, dash, underscore only
+/// (== `^[A-Za-z0-9._-]+$`). Rejects every shell metacharacter, so the value is
+/// safe to pass to Remove-AppxPackage.
+#[cfg(target_os = "windows")]
+fn valid_pfn(pfn: &str) -> bool {
+    !pfn.is_empty()
+        && pfn
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+/// Batch uninstall. The caller supplies only ids; the backend re-resolves the
+/// action from a trusted source and NEVER runs a caller-supplied command string.
+/// Registry apps: re-open the exact Uninstall subkey and run ITS OWN
+/// Quiet/UninstallString (installer-authored, trusted). MSIX: Remove-AppxPackage
+/// with a shape-validated PackageFullName. Protected (NonRemovable) and unknown
+/// ids are refused by validate_against_inventory + the per-arm guards below.
+#[cfg(target_os = "windows")]
+pub fn uninstall(ids: &[String]) -> AppActionReport {
+    use winreg::enums::KEY_READ;
+    let mut report = AppActionReport::default();
+    let known = validate_against_inventory(ids, &mut report, true);
+
+    // --- Registry (classic Win32) apps ---
+    for rest in split_ids(&known, "registry:") {
+        // rest == "<HIVE>:<subkey>"; split on the FIRST ':' so subkey may contain ':'.
+        let Some((label, subkey)) = rest.split_once(':') else {
+            report
+                .errors
+                .push(format!("refused (bad id): registry:{rest}"));
+            continue;
+        };
+        let Some((hive, base)) = registry_hive(label) else {
+            report
+                .errors
+                .push(format!("refused (unknown hive): registry:{rest}"));
+            continue;
+        };
+        if subkey.is_empty() {
+            report
+                .errors
+                .push(format!("refused (empty subkey): registry:{rest}"));
+            continue;
+        }
+        let path = format!(r"{base}\{subkey}");
+        let Ok(key) = hive.open_subkey_with_flags(&path, KEY_READ) else {
+            report
+                .errors
+                .push(format!("registry:{rest}: subkey not found"));
+            continue;
+        };
+        // Prefer the silent command; fall back to the interactive one.
+        let cmd_str = key
+            .get_value::<String, _>("QuietUninstallString")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| {
+                key.get_value::<String, _>("UninstallString")
+                    .ok()
+                    .filter(|s| !s.trim().is_empty())
+            });
+        let Some(cmd_str) = cmd_str else {
+            report
+                .errors
+                .push(format!("registry:{rest}: no uninstall command"));
+            continue;
+        };
+        // The command string comes from the registry (written by the app's own
+        // installer), never from the caller. Run it via `cmd /C` as one argument.
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/C", &cmd_str]);
+        exec(&mut report, &format!("uninstall {label}:{subkey}"), cmd);
+    }
+
+    // --- MSIX / Store apps ---
+    for pfn in split_ids(&known, "msix:") {
+        if !valid_pfn(&pfn) {
+            report
+                .errors
+                .push(format!("refused (bad package name): msix:{pfn}"));
+            continue;
+        }
+        let script = format!("Remove-AppxPackage -Package '{pfn}'");
+        let mut cmd = Command::new(POWERSHELL);
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+        exec(&mut report, &format!("uninstall msix:{pfn}"), cmd);
+    }
+    report
+}
+
 /// macOS: `.app` bundles have no in-place update mechanism, so this is a no-op.
 #[cfg(target_os = "macos")]
 pub fn update(_ids: &[String]) -> AppActionReport {
