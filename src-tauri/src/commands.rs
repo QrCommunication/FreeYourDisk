@@ -289,17 +289,23 @@ fn measure_system() -> u64 {
 #[cfg(target_os = "windows")]
 fn measure_system() -> u64 {
     // No `du` on Windows: sum the real system roots with the internal walker.
-    const ROOTS: &[&str] = &[
-        "C:\\Windows",
-        "C:\\Program Files",
-        "C:\\Program Files (x86)",
-        "C:\\ProgramData",
+    // Derive the roots from the environment so non-C: installs are counted
+    // (mirrors the %WINDIR% pattern in temp.rs); fall back to the C:\ defaults.
+    fn env_root(var: &str, fallback: &str) -> std::path::PathBuf {
+        std::env::var_os(var)
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from(fallback))
+    }
+    let roots = [
+        env_root("SystemRoot", "C:\\Windows"),
+        env_root("ProgramFiles", "C:\\Program Files"),
+        env_root("ProgramFiles(x86)", "C:\\Program Files (x86)"),
+        env_root("ProgramData", "C:\\ProgramData"),
     ];
-    let total: u64 = ROOTS
+    let total: u64 = roots
         .iter()
-        .map(std::path::Path::new)
         .filter(|p| p.exists())
-        .map(core_scan::cache::cached_dir_total)
+        .map(|p| core_scan::cache::cached_dir_total(p))
         .sum();
     core_scan::cache::save(&settings::config_dir().join("dir-cache.json"));
     total
