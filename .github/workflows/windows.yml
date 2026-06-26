@@ -38,6 +38,10 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked
 
+      # `--bundles nsis` is LOAD-BEARING: bundle.targets in tauri.conf.json is
+      # Linux-only (deb/rpm/appimage), so this CLI flag is what selects the
+      # Windows installer (same pattern macos.yml uses with `--bundles app`).
+      # Removing it would silently produce NO Windows artifact.
       - name: Build NSIS installer (unsigned)
         run: cargo tauri build --bundles nsis
 
