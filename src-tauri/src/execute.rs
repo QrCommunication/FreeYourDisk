@@ -114,7 +114,7 @@ fn err_report(plan: &DeletionPlan, message: &str) -> ExecutionReport {
 }
 
 /// Real helper invocation: `pkexec <helper>`, plan on stdin, report on stdout.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub fn pkexec_helper(plan: &DeletionPlan) -> ExecutionReport {
     let json = match serde_json::to_string(plan) {
         Ok(json) => json,
@@ -148,9 +148,59 @@ pub fn pkexec_helper(plan: &DeletionPlan) -> ExecutionReport {
     }
 }
 
+/// Windows: relaunch THIS exe elevated (UAC) in headless `--apply` mode to run
+/// the root plan. Only the parent PID is passed as an argument (no spaces); both
+/// sides derive `%TEMP%\fyd-apply-<pid>-{plan,report}.json`. Elevation uses
+/// `powershell Start-Process -Verb RunAs -Wait` — the WinAPI-free analogue of the
+/// macOS osascript-admin path.
+#[cfg(target_os = "windows")]
+pub fn pkexec_helper(plan: &DeletionPlan) -> ExecutionReport {
+    let json = match serde_json::to_string(plan) {
+        Ok(json) => json,
+        Err(err) => return err_report(plan, &err.to_string()),
+    };
+    let token = std::process::id().to_string();
+    let tmp = std::env::temp_dir();
+    let plan_path = tmp.join(format!("fyd-apply-{token}-plan.json"));
+    let report_path = tmp.join(format!("fyd-apply-{token}-report.json"));
+    let _ = std::fs::remove_file(&report_path);
+    if std::fs::write(&plan_path, &json).is_err() {
+        return err_report(plan, "failed to stage deletion plan");
+    }
+
+    let exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(err) => {
+            let _ = std::fs::remove_file(&plan_path);
+            return err_report(plan, &format!("cannot locate exe: {err}"));
+        }
+    };
+    // Single-quote the exe path for PowerShell, doubling any embedded single quote.
+    let exe_ps = exe.to_string_lossy().replace('\'', "''");
+    let ps = format!(
+        "Start-Process -FilePath '{exe_ps}' -ArgumentList '--apply','{token}' -Verb RunAs -Wait -WindowStyle Hidden"
+    );
+
+    let status = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
+        .status();
+
+    let result = match status {
+        Ok(s) if s.success() => std::fs::read_to_string(&report_path)
+            .ok()
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_else(|| err_report(plan, "elevated helper returned no report")),
+        Ok(_) => err_report(plan, "elevation cancelled or failed"),
+        Err(err) => err_report(plan, &format!("failed to launch elevation: {err}")),
+    };
+    let _ = std::fs::remove_file(&plan_path);
+    let _ = std::fs::remove_file(&report_path);
+    result
+}
+
 /// Read SMART for every device in one privileged call. Returns an empty vec if
 /// pkexec is cancelled or the helper/smartctl is unavailable (graceful).
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub fn pkexec_smart(devices: &[String]) -> Vec<SmartInfo> {
     if devices.is_empty() {
         return Vec::new();
@@ -164,6 +214,13 @@ pub fn pkexec_smart(devices: &[String]) -> Vec<SmartInfo> {
         Ok(out) => serde_json::from_slice(&out.stdout).unwrap_or_default(),
         Err(_) => Vec::new(),
     }
+}
+
+/// Windows SMART is implemented in Phase 3 (bundled smartctl.exe via the elevated
+/// executor). Until then, return no SMART data (the UI degrades gracefully).
+#[cfg(target_os = "windows")]
+pub fn pkexec_smart(_devices: &[String]) -> Vec<SmartInfo> {
+    Vec::new()
 }
 
 // ---------------------------------------------------------------------------
