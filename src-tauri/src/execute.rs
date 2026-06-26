@@ -17,11 +17,14 @@ use std::process::Command;
 #[cfg(target_os = "linux")]
 use std::process::Stdio;
 
-/// Installed location of the privileged helper.
+/// Installed location of the privileged helper (Linux/macOS only — Windows
+/// elevates in-process via PowerShell and never invokes the helper binary).
+#[cfg(not(target_os = "windows"))]
 pub const HELPER_PATH: &str = "/usr/lib/freeyourdisk/freeyourdisk-helper";
 
 /// Resolve the helper binary: the installed path in production, or a sibling of
-/// the running executable when developing (`cargo tauri dev`).
+/// the running executable when developing (`cargo tauri dev`). Linux/macOS only.
+#[cfg(not(target_os = "windows"))]
 pub fn resolve_helper_path() -> PathBuf {
     let installed = PathBuf::from(HELPER_PATH);
     if installed.exists() {
@@ -322,7 +325,8 @@ pub fn pkexec_smart(devices: &[String]) -> Vec<SmartInfo> {
 /// Install SMART tools as root via the helper (`install-deps <manager> <pkg>…`).
 /// The helper re-validates the package names against its own allowlist.
 /// (Linux only — macOS installs via Homebrew at user level.)
-#[cfg(not(target_os = "macos"))]
+// Linux only: macOS installs via brew, Windows via winget (winget_install_smart).
+#[cfg(target_os = "linux")]
 pub fn pkexec_install_deps(manager: &str, packages: &[String]) -> InstallReport {
     let mut cmd = Command::new("pkexec");
     cmd.arg(resolve_helper_path())
