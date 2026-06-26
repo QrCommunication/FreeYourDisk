@@ -173,6 +173,11 @@ pub fn set_schedule(enabled: bool) -> Result<bool, String> {
             Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
         }
     } else {
+        // Idempotent: deleting an absent task means "already disabled", not an
+        // error (mirrors the autostart disable). Real /Delete failures still surface.
+        if !schedule_enabled() {
+            return Ok(false);
+        }
         let out = std::process::Command::new("schtasks")
             .args(["/Delete", "/TN", CLEANUP_TASK_NAME, "/F"])
             .output()
