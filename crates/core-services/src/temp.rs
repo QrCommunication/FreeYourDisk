@@ -46,6 +46,21 @@ impl TempService {
             path: home.join("Library/Caches"),
             requires_root: false,
         });
+        // Windows: %LOCALAPPDATA%\Temp (user) and %WINDIR%\Temp (privileged).
+        #[cfg(target_os = "windows")]
+        {
+            roots.push(TempRoot {
+                path: home.join("AppData/Local/Temp"),
+                requires_root: false,
+            });
+            let windir = std::env::var_os("WINDIR")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| std::path::PathBuf::from("C:\\Windows"));
+            roots.push(TempRoot {
+                path: windir.join("Temp"),
+                requires_root: true,
+            });
+        }
         Self {
             roots,
             min_age_days,
