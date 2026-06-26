@@ -185,13 +185,20 @@ pub fn read_smart_elevated(token: &str) -> i32 {
     }
     let report_path = std::env::temp_dir().join(format!("fyd-smart-{token}-report.json"));
 
-    // Fixed install path first, then PATH.
-    let smartctl = {
-        let fixed = std::path::Path::new("C:\\Program Files\\smartmontools\\bin\\smartctl.exe");
-        if fixed.is_file() {
-            fixed.to_string_lossy().into_owned()
-        } else {
-            "smartctl".to_string()
+    // Elevated context: resolve smartctl ONLY from trusted absolute install
+    // locations. NEVER fall back to PATH — a planted smartctl.exe on a PATH dir
+    // would execute as admin (binary-planting EoP). Absent → SMART unavailable.
+    let smartctl = match [
+        "C:\\Program Files\\smartmontools\\bin\\smartctl.exe",
+        "C:\\Program Files (x86)\\smartmontools\\bin\\smartctl.exe",
+    ]
+    .into_iter()
+    .find(|p| std::path::Path::new(p).is_file())
+    {
+        Some(path) => path.to_string(),
+        None => {
+            let _ = std::fs::write(&report_path, "[]");
+            return 0;
         }
     };
 
