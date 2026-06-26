@@ -881,3 +881,106 @@ pub fn update(ids: &[String]) -> AppActionReport {
     }
     report
 }
+
+// ---- Windows: winget update detection + batch upgrade ----------------------
+
+/// Heuristically parse `winget upgrade` table output → the Name column of each
+/// upgradable row. Columns are padded with 2+ spaces, so the Name is everything
+/// before the first double-space run (Names may contain single spaces). Rows
+/// start after the dashed separator and end at the first blank line.
+#[cfg(target_os = "windows")]
+fn parse_winget_upgrade_names(out: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut in_table = false;
+    for line in out.lines() {
+        let line = line.trim_end();
+        if !in_table {
+            if line.starts_with("---") {
+                in_table = true;
+            }
+            continue;
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            break;
+        }
+        // Footer such as "N upgrades available." / pinned-package notes.
+        let starts_digit = trimmed.chars().next().is_some_and(|c| c.is_ascii_digit());
+        if starts_digit && trimmed.to_lowercase().contains("upgrade") {
+            continue;
+        }
+        if let Some(name) = line.split("  ").next() {
+            let name = name.trim();
+            if !name.is_empty() {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names
+}
+
+/// Ids of apps winget reports as upgradable (for UI badging). Maps winget Names
+/// to inventory ids case-insensitively so the id-keyed frontend badging works
+/// unchanged. Unmatched winget Names are dropped.
+#[cfg(target_os = "windows")]
+pub fn updates() -> Vec<String> {
+    let Some(out) = run(
+        "winget",
+        &[
+            "upgrade",
+            "--accept-source-agreements",
+            "--disable-interactivity",
+        ],
+    ) else {
+        return Vec::new();
+    };
+    let names = parse_winget_upgrade_names(&out);
+    if names.is_empty() {
+        return Vec::new();
+    }
+    let lower: HashSet<String> = names.iter().map(|n| n.to_lowercase()).collect();
+    list()
+        .into_iter()
+        .filter(|app| lower.contains(&app.name.to_lowercase()))
+        .map(|app| app.id)
+        .collect()
+}
+
+/// Best-effort batch update via winget. Each id is resolved to its inventory
+/// AppEntry name and updated by `winget upgrade --silent --name <name>`. winget
+/// keys on its own package identity, so an entry whose name does not match a
+/// winget package (or matches several) cannot be updated — that is reported as an
+/// explicit error, never silently skipped.
+#[cfg(target_os = "windows")]
+pub fn update(ids: &[String]) -> AppActionReport {
+    let mut report = AppActionReport::default();
+    let known = validate_against_inventory(ids, &mut report, false);
+    if known.is_empty() {
+        return report;
+    }
+    // One extra inventory scan to map ids → names (on-demand action; acceptable).
+    let inventory = list();
+    for id in &known {
+        let Some(app) = inventory.iter().find(|a| &a.id == id) else {
+            report.errors.push(format!("{id}: not found in inventory"));
+            continue;
+        };
+        // Anti argument-injection: a name starting with '-' would read as a flag.
+        if app.name.trim().is_empty() || app.name.starts_with('-') {
+            report.errors.push(format!("{id}: unsafe package name"));
+            continue;
+        }
+        let mut cmd = Command::new("winget");
+        cmd.args([
+            "upgrade",
+            "--silent",
+            "--accept-source-agreements",
+            "--accept-package-agreements",
+            "--disable-interactivity",
+            "--name",
+            &app.name,
+        ]);
+        exec(&mut report, &format!("winget upgrade {}", app.name), cmd);
+    }
+    report
+}
