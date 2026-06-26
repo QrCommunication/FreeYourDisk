@@ -1,0 +1,54 @@
+name: Windows build
+
+# Builds an UNSIGNED NSIS installer on a GitHub Windows runner. Trigger
+# manually, or on version tags. Code signing (Authenticode) can be added later
+# via certificate secrets.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Windows installer (NSIS, unsigned)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Build frontend
+        working-directory: ui
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked
+
+      - name: Build NSIS installer (unsigned)
+        run: cargo tauri build --bundles nsis
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: freeyourdisk-windows
+          path: target/release/bundle/nsis/*-setup.exe
+
+      - name: Attach to release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: target/release/bundle/nsis/*-setup.exe
