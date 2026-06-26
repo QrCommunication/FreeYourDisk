@@ -5,7 +5,9 @@
 
 use serde::Serialize;
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(not(target_os = "windows"))]
+use std::path::PathBuf;
 use std::process::Command;
 
 #[derive(Serialize, Clone, Debug)]
@@ -30,7 +32,7 @@ pub struct AppActionReport {
     pub errors: Vec<String>,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const APT_TOP: usize = 80;
 
 fn run(cmd: &str, args: &[&str]) -> Option<String> {
@@ -41,6 +43,7 @@ fn run(cmd: &str, args: &[&str]) -> Option<String> {
     Some(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+#[cfg(not(target_os = "windows"))]
 fn home() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -49,7 +52,7 @@ fn home() -> PathBuf {
 
 // ---- apt / dpkg -----------------------------------------------------------
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn detect_apt() -> Vec<AppEntry> {
     let Some(out) = run(
         "dpkg-query",
@@ -90,7 +93,7 @@ fn detect_apt() -> Vec<AppEntry> {
 
 // ---- flatpak --------------------------------------------------------------
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn parse_human_size(s: &str) -> u64 {
     let s = s.trim().replace(',', ".");
     let (num, mult) = if let Some(n) = s.strip_suffix("GB").or_else(|| s.strip_suffix("GiB")) {
@@ -111,7 +114,7 @@ fn parse_human_size(s: &str) -> u64 {
     (num.trim().parse::<f64>().unwrap_or(0.0) * mult as f64) as u64
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn detect_flatpak() -> Vec<AppEntry> {
     let Some(out) = run(
         "flatpak",
@@ -149,7 +152,7 @@ fn detect_flatpak() -> Vec<AppEntry> {
 
 // ---- snap -----------------------------------------------------------------
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn snap_size(name: &str) -> u64 {
     // The installed snap is the squashfs at /var/lib/snapd/snaps/<name>_<rev>.snap
     let dir = Path::new("/var/lib/snapd/snaps");
@@ -167,7 +170,7 @@ fn snap_size(name: &str) -> u64 {
         .unwrap_or(0)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn detect_snap() -> Vec<AppEntry> {
     let Some(out) = run("snap", &["list"]) else {
         return Vec::new();
@@ -201,7 +204,7 @@ fn detect_snap() -> Vec<AppEntry> {
 
 // ---- AppImages & app folders ---------------------------------------------
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn detect_appimages() -> Vec<AppEntry> {
     let h = home();
     let dirs = [
@@ -257,13 +260,196 @@ fn detect_appimages() -> Vec<AppEntry> {
 }
 
 /// Full inventory, largest first.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub fn list() -> Vec<AppEntry> {
     let mut apps = Vec::new();
     apps.extend(detect_apt());
     apps.extend(detect_flatpak());
     apps.extend(detect_snap());
     apps.extend(detect_appimages());
+    apps.sort_by_key(|a| std::cmp::Reverse(a.size_bytes));
+    apps
+}
+
+// ---- Windows: classic apps via the registry Uninstall keys ----------------
+
+/// Maps an id hive label to (predefined hive RegKey, Uninstall base subpath).
+/// HKLM = 64-bit machine view, HKLM32 = 32-bit (WOW6432Node) machine view,
+/// HKCU = per-user. Predefined RegKeys are not closed on drop (winreg special-
+/// cases them), so returning an owned RegKey is cheap and correct.
+#[cfg(target_os = "windows")]
+fn registry_hive(label: &str) -> Option<(winreg::RegKey, &'static str)> {
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    use winreg::RegKey;
+    const UNINSTALL: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
+    const UNINSTALL32: &str = r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall";
+    match label {
+        "HKLM" => Some((RegKey::predef(HKEY_LOCAL_MACHINE), UNINSTALL)),
+        "HKLM32" => Some((RegKey::predef(HKEY_LOCAL_MACHINE), UNINSTALL32)),
+        "HKCU" => Some((RegKey::predef(HKEY_CURRENT_USER), UNINSTALL)),
+        _ => None,
+    }
+}
+
+/// Enumerate the three Uninstall hives. Skip entries with no DisplayName, with
+/// SystemComponent==1 (hidden component), or with no uninstall command (updates/
+/// patches). id = `registry:<HIVE>:<subkey>` so uninstall re-opens the exact
+/// hive/view. size = EstimatedSize (KB) * 1024. Dedupe identical (name, version).
+#[cfg(target_os = "windows")]
+fn detect_registry() -> Vec<AppEntry> {
+    use winreg::enums::KEY_READ;
+    let mut out = Vec::new();
+    // (hive label, requires_root): HKLM/HKLM32 are machine-wide → admin to remove.
+    for (label, requires_root) in [("HKLM", true), ("HKLM32", true), ("HKCU", false)] {
+        let Some((hive, base)) = registry_hive(label) else {
+            continue;
+        };
+        let Ok(uninstall) = hive.open_subkey_with_flags(base, KEY_READ) else {
+            continue;
+        };
+        for name in uninstall.enum_keys().flatten() {
+            let Ok(sub) = uninstall.open_subkey_with_flags(&name, KEY_READ) else {
+                continue;
+            };
+            // DisplayName is mandatory.
+            let Ok(display_name) = sub.get_value::<String, _>("DisplayName") else {
+                continue;
+            };
+            if display_name.trim().is_empty() {
+                continue;
+            }
+            // SystemComponent==1 → hidden component / update, not a user app.
+            if sub.get_value::<u32, _>("SystemComponent").unwrap_or(0) == 1 {
+                continue;
+            }
+            // Must carry a usable uninstall command, else it is an update/patch.
+            let quiet = sub.get_value::<String, _>("QuietUninstallString").ok();
+            let plain = sub.get_value::<String, _>("UninstallString").ok();
+            let has_cmd = quiet
+                .as_deref()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false)
+                || plain
+                    .as_deref()
+                    .map(|s| !s.trim().is_empty())
+                    .unwrap_or(false);
+            if !has_cmd {
+                continue;
+            }
+            let version = sub
+                .get_value::<String, _>("DisplayVersion")
+                .ok()
+                .filter(|s| !s.trim().is_empty());
+            let kb = sub.get_value::<u32, _>("EstimatedSize").unwrap_or(0);
+            out.push(AppEntry {
+                id: format!("registry:{label}:{name}"),
+                name: display_name,
+                source: "registry".into(),
+                version,
+                size_bytes: u64::from(kb) * 1024,
+                requires_root,
+                protected: false,
+            });
+        }
+    }
+    // Dedupe the same app surfaced in multiple hives; keep the first (HKLM wins).
+    let mut seen: HashSet<(String, Option<String>)> = HashSet::new();
+    out.retain(|a| seen.insert((a.name.clone(), a.version.clone())));
+    out
+}
+
+// ---- Windows: MSIX / Store apps via Get-AppxPackage --------------------------
+
+/// Absolute path so PATH/profile cannot redirect to a fake powershell.
+#[cfg(target_os = "windows")]
+const POWERSHELL: &str = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe";
+
+/// One row of the `Get-AppxPackage | ConvertTo-Json` output. Version and
+/// SignatureKind are forced to strings in the script (see SCRIPT below).
+#[cfg(target_os = "windows")]
+#[derive(serde::Deserialize)]
+struct AppxRaw {
+    #[serde(rename = "Name")]
+    name: Option<String>,
+    #[serde(rename = "PackageFullName")]
+    package_full_name: Option<String>,
+    #[serde(rename = "Version")]
+    version: Option<String>,
+    #[serde(rename = "InstallLocation")]
+    install_location: Option<String>,
+    #[serde(rename = "NonRemovable")]
+    non_removable: Option<bool>,
+    #[serde(rename = "SignatureKind")]
+    signature_kind: Option<String>,
+}
+
+/// MSIX packages for the current user. Skips OS framework packages
+/// (SignatureKind == "System"). protected = NonRemovable. size = best-effort dir
+/// size of InstallLocation. requires_root = false (per-user removal).
+#[cfg(target_os = "windows")]
+fn detect_msix() -> Vec<AppEntry> {
+    // `.ToString()` coerces System.Version and the SignatureKind enum to plain
+    // strings; otherwise ConvertTo-Json emits Version as a nested object.
+    const SCRIPT: &str = "Get-AppxPackage | Select-Object Name,PackageFullName,\
+@{N='Version';E={$_.Version.ToString()}},InstallLocation,NonRemovable,\
+@{N='SignatureKind';E={$_.SignatureKind.ToString()}} | ConvertTo-Json -Compress -Depth 3";
+    let Some(out) = run(
+        POWERSHELL,
+        &["-NoProfile", "-NonInteractive", "-Command", SCRIPT],
+    ) else {
+        return Vec::new();
+    };
+    let trimmed = out.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    // ConvertTo-Json emits a bare object for a single package, an array otherwise.
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+        return Vec::new();
+    };
+    let items = match value {
+        serde_json::Value::Array(a) => a,
+        other => vec![other],
+    };
+    let mut apps = Vec::new();
+    for item in items {
+        let Ok(pkg) = serde_json::from_value::<AppxRaw>(item) else {
+            continue;
+        };
+        let (Some(name), Some(pfn)) = (
+            pkg.name.filter(|s| !s.trim().is_empty()),
+            pkg.package_full_name.filter(|s| !s.trim().is_empty()),
+        ) else {
+            continue;
+        };
+        // OS frameworks are signed "System" — not user-facing apps.
+        if pkg.signature_kind.as_deref() == Some("System") {
+            continue;
+        }
+        let size = pkg
+            .install_location
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| core_scan::cache::cached_dir_total(Path::new(s)))
+            .unwrap_or(0);
+        apps.push(AppEntry {
+            id: format!("msix:{pfn}"),
+            name,
+            source: "msix".into(),
+            version: pkg.version.filter(|s| !s.trim().is_empty()),
+            size_bytes: size,
+            requires_root: false,
+            protected: pkg.non_removable.unwrap_or(false),
+        });
+    }
+    apps
+}
+
+/// Full inventory (registry + MSIX), largest first.
+#[cfg(target_os = "windows")]
+pub fn list() -> Vec<AppEntry> {
+    let mut apps = detect_registry();
+    apps.extend(detect_msix());
     apps.sort_by_key(|a| std::cmp::Reverse(a.size_bytes));
     apps
 }
@@ -342,7 +528,7 @@ fn within_macos_app_base(path: &Path) -> bool {
 
 /// Ids of applications with a newer version available (best-effort, may use the
 /// network). Returns the subset of `id`s that are upgradable.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub fn updates() -> Vec<String> {
     let mut out = Vec::new();
     // apt: uses the local index (no root). Lines: "pkg/repo version arch [upgradable from: ...]"
@@ -387,13 +573,13 @@ fn split_ids(ids: &[String], prefix: &str) -> Vec<String> {
 /// Safe argv value: non-empty and never looks like a flag (anti argument
 /// injection). Package/app ids are also cross-checked against the live
 /// inventory, so this is defence in depth.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn safe_value(s: &str) -> bool {
     !s.is_empty() && !s.starts_with('-')
 }
 
 /// Allowlisted AppImage/app-folder base directories.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn appimage_bases() -> Vec<PathBuf> {
     let h = home();
     vec![
@@ -408,7 +594,7 @@ fn appimage_bases() -> Vec<PathBuf> {
 }
 
 /// True only if `path`, after canonicalisation, lives inside an allowed base.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn within_allowed_base(path: &Path) -> bool {
     let Ok(canon) = std::fs::canonicalize(path) else {
         return false;
@@ -463,7 +649,7 @@ fn validate_against_inventory(
 
 /// Delete the AppImages/app folders among `ids`, but only those that resolve
 /// inside an allowed base directory.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn remove_appimages(known: &[String], report: &mut AppActionReport) {
     for path in split_ids(known, "appimage:") {
         let p = Path::new(&path);
@@ -494,7 +680,7 @@ pub fn updates() -> Vec<String> {
 }
 
 /// Batch uninstall. apt/snap go through pkexec; flatpak and AppImages don't.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub fn uninstall(ids: &[String]) -> AppActionReport {
     let mut report = AppActionReport::default();
     let known = validate_against_inventory(ids, &mut report, true);
@@ -559,6 +745,96 @@ pub fn uninstall(ids: &[String]) -> AppActionReport {
     report
 }
 
+/// MSIX PackageFullName shape guard: alphanumerics, dot, dash, underscore only
+/// (== `^[A-Za-z0-9._-]+$`). Rejects every shell metacharacter, so the value is
+/// safe to pass to Remove-AppxPackage.
+#[cfg(target_os = "windows")]
+fn valid_pfn(pfn: &str) -> bool {
+    !pfn.is_empty()
+        && pfn
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+/// Batch uninstall. The caller supplies only ids; the backend re-resolves the
+/// action from a trusted source and NEVER runs a caller-supplied command string.
+/// Registry apps: re-open the exact Uninstall subkey and run ITS OWN
+/// Quiet/UninstallString (installer-authored, trusted). MSIX: Remove-AppxPackage
+/// with a shape-validated PackageFullName. Protected (NonRemovable) and unknown
+/// ids are refused by validate_against_inventory + the per-arm guards below.
+#[cfg(target_os = "windows")]
+pub fn uninstall(ids: &[String]) -> AppActionReport {
+    use winreg::enums::KEY_READ;
+    let mut report = AppActionReport::default();
+    let known = validate_against_inventory(ids, &mut report, true);
+
+    // --- Registry (classic Win32) apps ---
+    for rest in split_ids(&known, "registry:") {
+        // rest == "<HIVE>:<subkey>"; split on the FIRST ':' so subkey may contain ':'.
+        let Some((label, subkey)) = rest.split_once(':') else {
+            report
+                .errors
+                .push(format!("refused (bad id): registry:{rest}"));
+            continue;
+        };
+        let Some((hive, base)) = registry_hive(label) else {
+            report
+                .errors
+                .push(format!("refused (unknown hive): registry:{rest}"));
+            continue;
+        };
+        if subkey.is_empty() {
+            report
+                .errors
+                .push(format!("refused (empty subkey): registry:{rest}"));
+            continue;
+        }
+        let path = format!(r"{base}\{subkey}");
+        let Ok(key) = hive.open_subkey_with_flags(&path, KEY_READ) else {
+            report
+                .errors
+                .push(format!("registry:{rest}: subkey not found"));
+            continue;
+        };
+        // Prefer the silent command; fall back to the interactive one.
+        let cmd_str = key
+            .get_value::<String, _>("QuietUninstallString")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| {
+                key.get_value::<String, _>("UninstallString")
+                    .ok()
+                    .filter(|s| !s.trim().is_empty())
+            });
+        let Some(cmd_str) = cmd_str else {
+            report
+                .errors
+                .push(format!("registry:{rest}: no uninstall command"));
+            continue;
+        };
+        // The command string comes from the registry (written by the app's own
+        // installer), never from the caller. Run it via `cmd /C` as one argument.
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/C", &cmd_str]);
+        exec(&mut report, &format!("uninstall {label}:{subkey}"), cmd);
+    }
+
+    // --- MSIX / Store apps ---
+    for pfn in split_ids(&known, "msix:") {
+        if !valid_pfn(&pfn) {
+            report
+                .errors
+                .push(format!("refused (bad package name): msix:{pfn}"));
+            continue;
+        }
+        let script = format!("Remove-AppxPackage -Package '{pfn}'");
+        let mut cmd = Command::new(POWERSHELL);
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+        exec(&mut report, &format!("uninstall msix:{pfn}"), cmd);
+    }
+    report
+}
+
 /// macOS: `.app` bundles have no in-place update mechanism, so this is a no-op.
 #[cfg(target_os = "macos")]
 pub fn update(_ids: &[String]) -> AppActionReport {
@@ -566,7 +842,7 @@ pub fn update(_ids: &[String]) -> AppActionReport {
 }
 
 /// Batch update.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub fn update(ids: &[String]) -> AppActionReport {
     let mut report = AppActionReport::default();
     let known = validate_against_inventory(ids, &mut report, false);
@@ -602,6 +878,109 @@ pub fn update(ids: &[String]) -> AppActionReport {
             &format!("flatpak update ({})", flatpak.len()),
             cmd,
         );
+    }
+    report
+}
+
+// ---- Windows: winget update detection + batch upgrade ----------------------
+
+/// Heuristically parse `winget upgrade` table output → the Name column of each
+/// upgradable row. Columns are padded with 2+ spaces, so the Name is everything
+/// before the first double-space run (Names may contain single spaces). Rows
+/// start after the dashed separator and end at the first blank line.
+#[cfg(target_os = "windows")]
+fn parse_winget_upgrade_names(out: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut in_table = false;
+    for line in out.lines() {
+        let line = line.trim_end();
+        if !in_table {
+            if line.starts_with("---") {
+                in_table = true;
+            }
+            continue;
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            break;
+        }
+        // Footer such as "N upgrades available." / pinned-package notes.
+        let starts_digit = trimmed.chars().next().is_some_and(|c| c.is_ascii_digit());
+        if starts_digit && trimmed.to_lowercase().contains("upgrade") {
+            continue;
+        }
+        if let Some(name) = line.split("  ").next() {
+            let name = name.trim();
+            if !name.is_empty() {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names
+}
+
+/// Ids of apps winget reports as upgradable (for UI badging). Maps winget Names
+/// to inventory ids case-insensitively so the id-keyed frontend badging works
+/// unchanged. Unmatched winget Names are dropped.
+#[cfg(target_os = "windows")]
+pub fn updates() -> Vec<String> {
+    let Some(out) = run(
+        "winget",
+        &[
+            "upgrade",
+            "--accept-source-agreements",
+            "--disable-interactivity",
+        ],
+    ) else {
+        return Vec::new();
+    };
+    let names = parse_winget_upgrade_names(&out);
+    if names.is_empty() {
+        return Vec::new();
+    }
+    let lower: HashSet<String> = names.iter().map(|n| n.to_lowercase()).collect();
+    list()
+        .into_iter()
+        .filter(|app| lower.contains(&app.name.to_lowercase()))
+        .map(|app| app.id)
+        .collect()
+}
+
+/// Best-effort batch update via winget. Each id is resolved to its inventory
+/// AppEntry name and updated by `winget upgrade --silent --name <name>`. winget
+/// keys on its own package identity, so an entry whose name does not match a
+/// winget package (or matches several) cannot be updated — that is reported as an
+/// explicit error, never silently skipped.
+#[cfg(target_os = "windows")]
+pub fn update(ids: &[String]) -> AppActionReport {
+    let mut report = AppActionReport::default();
+    let known = validate_against_inventory(ids, &mut report, false);
+    if known.is_empty() {
+        return report;
+    }
+    // One extra inventory scan to map ids → names (on-demand action; acceptable).
+    let inventory = list();
+    for id in &known {
+        let Some(app) = inventory.iter().find(|a| &a.id == id) else {
+            report.errors.push(format!("{id}: not found in inventory"));
+            continue;
+        };
+        // Anti argument-injection: a name starting with '-' would read as a flag.
+        if app.name.trim().is_empty() || app.name.starts_with('-') {
+            report.errors.push(format!("{id}: unsafe package name"));
+            continue;
+        }
+        let mut cmd = Command::new("winget");
+        cmd.args([
+            "upgrade",
+            "--silent",
+            "--accept-source-agreements",
+            "--accept-package-agreements",
+            "--disable-interactivity",
+            "--name",
+            &app.name,
+        ]);
+        exec(&mut report, &format!("winget upgrade {}", app.name), cmd);
     }
     report
 }

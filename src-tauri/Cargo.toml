@@ -28,5 +28,9 @@ getrandom = "0.2"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[target.'cfg(windows)'.dependencies]
+# Registry Uninstall inventory + (later phases) autostart. Safe crate, no `unsafe`.
+winreg = "0.56"
+
 [dev-dependencies]
 tempfile = { workspace = true }
