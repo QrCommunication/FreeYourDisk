@@ -155,7 +155,7 @@ pub fn pkexec_helper(plan: &DeletionPlan) -> ExecutionReport {
 
 /// Windows: relaunch THIS exe elevated (UAC) in headless `--apply` mode to run
 /// the root plan. Only the parent PID is passed as an argument (no spaces); both
-/// sides derive `%TEMP%\fyd-apply-<pid>-{plan,report}.json`. Elevation uses
+/// sides derive `%TEMP%\fyd-apply-<token>-{plan,report}.json`. Elevation uses
 /// `powershell Start-Process -Verb RunAs -Wait` — the WinAPI-free analogue of the
 /// macOS osascript-admin path.
 #[cfg(target_os = "windows")]
@@ -164,7 +164,7 @@ pub fn pkexec_helper(plan: &DeletionPlan) -> ExecutionReport {
         Ok(json) => json,
         Err(err) => return err_report(plan, &err.to_string()),
     };
-    let token = std::process::id().to_string();
+    let token = elevation_token();
     let tmp = std::env::temp_dir();
     let plan_path = tmp.join(format!("fyd-apply-{token}-plan.json"));
     let report_path = tmp.join(format!("fyd-apply-{token}-report.json"));
@@ -227,7 +227,7 @@ pub fn pkexec_smart(devices: &[String]) -> Vec<SmartInfo> {
 pub fn pkexec_smart(_devices: &[String]) -> Vec<SmartInfo> {
     // The elevated child self-discovers devices via `smartctl --scan-open`, so
     // the caller's device list is unused. One UAC prompt; report read from file.
-    let token = std::process::id().to_string();
+    let token = elevation_token();
     let report_path = std::env::temp_dir().join(format!("fyd-smart-{token}-report.json"));
     let _ = std::fs::remove_file(&report_path);
 
@@ -374,6 +374,20 @@ pub fn winget_install_smart() -> InstallReport {
             success: false,
             message: format!("failed to run winget: {err}"),
         },
+    }
+}
+
+/// A random, unguessable token (20 decimal digits) for the elevated-IPC temp
+/// file names. Random — not the PID — so a local same-user attacker cannot
+/// pre-create a junction/file at a predictable path (TOCTOU) to redirect the
+/// admin write or inject a forged report. Digit-only to satisfy the elevated
+/// child's token guard. Falls back to the PID only if the OS RNG is unavailable.
+#[allow(dead_code)] // used only by the Windows elevated executors
+fn elevation_token() -> String {
+    let mut buf = [0u8; 8];
+    match getrandom::getrandom(&mut buf) {
+        Ok(()) => format!("{:020}", u64::from_le_bytes(buf)),
+        Err(_) => std::process::id().to_string(),
     }
 }
 

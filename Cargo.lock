@@ -915,6 +915,7 @@ dependencies = [
  "core-services",
  "core-trash",
  "dirs",
+ "getrandom 0.2.17",
  "jwalk",
  "libc",
  "serde",

@@ -176,7 +176,7 @@ pub fn apply_elevated(token: &str) -> i32 {
 
 /// Windows: the elevated SMART reader. Discovers devices with
 /// `smartctl --scan-open` and reads each with `smartctl -a -j`, writing a
-/// Vec<SmartInfo> to %TEMP%\fyd-smart-<token>-report.json. `token` = parent PID.
+/// Vec<SmartInfo> to %TEMP%\fyd-smart-<token>-report.json. `token` = random nonce.
 #[cfg(target_os = "windows")]
 pub fn read_smart_elevated(token: &str) -> i32 {
     use core_ipc::SmartInfo;
@@ -197,8 +197,13 @@ pub fn read_smart_elevated(token: &str) -> i32 {
     {
         Some(path) => path.to_string(),
         None => {
-            let _ = std::fs::write(&report_path, "[]");
-            return 0;
+            // smartmontools not installed → no SMART data (expected). Surface a
+            // write failure (exit 1) rather than masking it as success.
+            return if std::fs::write(&report_path, "[]").is_ok() {
+                0
+            } else {
+                1
+            };
         }
     };
 
