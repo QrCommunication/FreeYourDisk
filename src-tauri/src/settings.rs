@@ -23,7 +23,7 @@ pub struct Settings {
     pub shortcut: String,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn default_shortcut() -> String {
     "Ctrl+Alt+Delete".to_string()
 }
@@ -31,6 +31,13 @@ fn default_shortcut() -> String {
 #[cfg(target_os = "macos")]
 fn default_shortcut() -> String {
     "Cmd+Shift+M".to_string()
+}
+
+// Windows: Ctrl+Alt+Delete is the Secure Attention Sequence and cannot be
+// registered by an app (silent failure), so use a capturable default.
+#[cfg(target_os = "windows")]
+fn default_shortcut() -> String {
+    "Ctrl+Shift+M".to_string()
 }
 
 impl Default for Settings {
@@ -48,7 +55,8 @@ impl Default for Settings {
 
 /// Per-user config dir for FreeYourDisk. Also used by the snapshot store.
 /// Linux: XDG (`~/.config/freeyourdisk`). macOS: `~/Library/Application Support`.
-#[cfg(not(target_os = "macos"))]
+/// Windows: `%APPDATA%\FreeYourDisk`.
+#[cfg(target_os = "linux")]
 pub fn config_dir() -> PathBuf {
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -61,10 +69,26 @@ pub fn config_dir() -> PathBuf {
     home().join("Library/Application Support/FreeYourDisk")
 }
 
+#[cfg(target_os = "windows")]
+pub fn config_dir() -> PathBuf {
+    std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home().join("AppData/Roaming"))
+        .join("FreeYourDisk")
+}
+
+#[cfg(unix)]
 fn home() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/"))
+}
+
+#[cfg(windows)]
+fn home() -> PathBuf {
+    std::env::var_os("USERPROFILE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("C:\\"))
 }
 
 fn settings_path() -> PathBuf {
@@ -91,7 +115,7 @@ pub fn save(settings: &Settings) -> Result<(), String> {
 
 /// Create or remove the launch-at-login entry.
 /// Linux: an XDG autostart `.desktop`. macOS: a LaunchAgent plist.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub fn apply_autostart(enabled: bool) -> Result<(), String> {
     let path = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -139,5 +163,12 @@ pub fn apply_autostart(enabled: bool) -> Result<(), String> {
     } else {
         let _ = fs::remove_file(&path);
     }
+    Ok(())
+}
+
+// Windows autostart (HKCU\...\Run) lands in Phase 6; no-op for now so the
+// settings save path succeeds.
+#[cfg(target_os = "windows")]
+pub fn apply_autostart(_enabled: bool) -> Result<(), String> {
     Ok(())
 }

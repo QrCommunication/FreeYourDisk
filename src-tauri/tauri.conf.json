@@ -102,6 +102,9 @@
         "applicationFolderPosition": { "x": 480, "y": 220 },
         "windowSize": { "width": 660, "height": 420 }
       }
+    },
+    "windows": {
+      "webviewInstallMode": { "type": "embedBootstrapper" }
     }
   }
 }

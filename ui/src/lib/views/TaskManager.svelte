@@ -32,9 +32,7 @@
   let sortDir = $state<"asc" | "desc">("desc");
 
   const memPct = $derived(
-    stats && stats.mem_total > 0
-      ? (stats.mem_used / stats.mem_total) * 100
-      : 0,
+    stats && stats.mem_total > 0 ? (stats.mem_used / stats.mem_total) * 100 : 0,
   );
   const swapPct = $derived(
     stats && stats.swap_total > 0
@@ -55,8 +53,7 @@
     const dir = sortDir === "asc" ? 1 : -1;
     return list.slice().sort((a, b) => {
       const k = sortKey;
-      if (k === "name" || k === "user")
-        return a[k].localeCompare(b[k]) * dir;
+      if (k === "name" || k === "user") return a[k].localeCompare(b[k]) * dir;
       return (a[k] - b[k]) * dir;
     });
   });
@@ -270,7 +267,9 @@
         <div class="nums text-lg font-semibold">
           {stats ? humanizeBytes(stats.mem_used) : "—"}
           <span class="text-faint text-sm font-normal">
-            / {stats ? humanizeBytes(stats.mem_total) : "—"} · {memPct.toFixed(0)}%
+            / {stats ? humanizeBytes(stats.mem_total) : "—"} · {memPct.toFixed(
+              0,
+            )}%
           </span>
         </div>
       </div>
@@ -290,7 +289,9 @@
         <div class="nums text-lg font-semibold">
           {stats ? stats.load1.toFixed(2) : "—"}
           <span class="text-faint text-sm font-normal">
-            {stats ? `${stats.load5.toFixed(2)} ${stats.load15.toFixed(2)}` : ""}
+            {stats
+              ? `${stats.load5.toFixed(2)} ${stats.load15.toFixed(2)}`
+              : ""}
           </span>
         </div>
       </div>
@@ -352,9 +353,7 @@
   </div>
 
   <!-- Process table -->
-  <div
-    class="border-line bg-surface flex-1 overflow-hidden rounded-xl border"
-  >
+  <div class="border-line bg-surface flex-1 overflow-hidden rounded-xl border">
     <div class="h-full overflow-y-auto">
       <table class="w-full text-sm">
         <thead
@@ -373,9 +372,9 @@
                 >
                   {label}
                   {#if sortKey === key}
-                    {#if sortDir === "asc"}<CaretUp size={10} />{:else}<CaretDown
+                    {#if sortDir === "asc"}<CaretUp
                         size={10}
-                      />{/if}
+                      />{:else}<CaretDown size={10} />{/if}
                   {/if}
                 </span>
               </th>
@@ -393,10 +392,16 @@
                 {p.name}
               </td>
               <td class="text-muted px-3 py-1.5">{p.user}</td>
-              <td class="nums px-3 py-1.5 text-right" class:text-savings={p.cpu > 50}>
+              <td
+                class="nums px-3 py-1.5 text-right"
+                class:text-savings={p.cpu > 50}
+              >
                 {p.cpu.toFixed(0)}
               </td>
-              <td class="nums px-3 py-1.5 text-right" class:text-danger={p.mem_pct > 20}>
+              <td
+                class="nums px-3 py-1.5 text-right"
+                class:text-danger={p.mem_pct > 20}
+              >
                 {p.mem_pct.toFixed(1)}
               </td>
               <td class="nums text-muted px-3 py-1.5 text-right">

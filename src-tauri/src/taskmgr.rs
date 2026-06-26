@@ -148,10 +148,19 @@ pub fn process_list() -> Vec<ProcInfo> {
 }
 
 /// Send SIGTERM (graceful) or SIGKILL (force) to a pid.
+#[cfg(unix)]
 pub fn kill_process(pid: u32, force: bool) -> bool {
     let sig = if force { libc::SIGKILL } else { libc::SIGTERM };
     // Direct syscall: works regardless of the sampler's refresh state.
     unsafe { libc::kill(pid as i32, sig) == 0 }
+}
+
+/// Windows stub. Real TerminateProcess / WM_CLOSE arrives in the Task-manager
+/// phase (Phase 4); returning `false` keeps `panic_kill`/`restart_process`
+/// harmless until then.
+#[cfg(windows)]
+pub fn kill_process(_pid: u32, _force: bool) -> bool {
+    false
 }
 
 /// Capture a process's command line/cwd, kill it, then relaunch it (best effort).
@@ -261,9 +270,12 @@ pub fn panic_kill() -> Option<ProcInfo> {
 /// negative nice both require privilege; failures are ignored (the bundled
 /// systemd unit / pkexec helper grant the real thing).
 pub fn raise_priority() {
-    // OOM immunity is a Linux concept; macOS has no per-process oom score.
+    // OOM immunity is a Linux concept; macOS/Windows have no per-process oom score.
     #[cfg(target_os = "linux")]
     let _ = std::fs::write("/proc/self/oom_score_adj", "-1000");
+    // Negative nice needs privilege on Unix; failures are ignored. Windows gets
+    // SetPriorityClass in the Task-manager phase (Phase 4).
+    #[cfg(unix)]
     unsafe {
         libc::setpriority(libc::PRIO_PROCESS, 0, -5);
     }

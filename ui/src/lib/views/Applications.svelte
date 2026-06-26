@@ -177,7 +177,9 @@
             "applications.checking",
           )}
         {:else}
-          <Lightning size={14} weight="fill" />{$_("applications.check_updates")}
+          <Lightning size={14} weight="fill" />{$_(
+            "applications.check_updates",
+          )}
         {/if}
       </button>
     </div>

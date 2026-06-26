@@ -66,3 +66,30 @@ jobs:
       - name: Test
         working-directory: ui
         run: pnpm test
+
+  windows:
+    name: Windows (clippy compile gate)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Build frontend (required to compile src-tauri)
+        working-directory: ui
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: clippy (app only — privhelper is Linux/macOS)
+        run: cargo clippy -p freeyourdisk --all-targets -- -D warnings
