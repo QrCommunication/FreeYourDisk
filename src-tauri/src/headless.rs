@@ -7,6 +7,7 @@
 use core_services::{Service, TempRoot, TempService};
 use core_trash::{to_trash, Zones};
 use std::path::{Path, PathBuf};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::process::Command;
 
 /// Outcome of a headless run.
@@ -99,11 +100,27 @@ fn notify(freed_bytes: u64, count: usize) {
     } else {
         format!("{} freed · {count} items", humanize(freed_bytes))
     };
+
+    #[cfg(target_os = "linux")]
     let _ = Command::new("notify-send")
         .arg("--app-name=FreeYourDisk")
         .arg("FreeYourDisk")
         .arg(body)
         .status();
+
+    #[cfg(target_os = "windows")]
+    crate::toast::show("FreeYourDisk", &body);
+
+    #[cfg(target_os = "macos")]
+    {
+        let safe = body.replace('"', "");
+        let _ = Command::new("osascript")
+            .args([
+                "-e",
+                &format!("display notification \"{safe}\" with title \"FreeYourDisk\""),
+            ])
+            .status();
+    }
 }
 
 /// CLI entry point for `--headless`. Returns a process exit code.

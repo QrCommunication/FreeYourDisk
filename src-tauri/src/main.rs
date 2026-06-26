@@ -18,6 +18,8 @@ mod smartdeps;
 mod snapshot;
 mod state;
 mod taskmgr;
+#[cfg(target_os = "windows")]
+mod toast;
 mod tray;
 
 use state::AppState;
