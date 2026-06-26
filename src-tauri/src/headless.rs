@@ -131,6 +131,49 @@ pub fn run(args: &[String]) -> i32 {
     0
 }
 
+/// Windows: the elevated child. Reads the plan staged by the un-elevated parent
+/// at `%TEMP%\fyd-apply-<token>-plan.json`, re-validates against the hard-coded
+/// Windows root zone (`%WINDIR%\Temp`), deletes, and writes the report to
+/// `%TEMP%\fyd-apply-<token>-report.json`. `token` is the parent PID (no spaces).
+#[cfg(target_os = "windows")]
+pub fn apply_elevated(token: &str) -> i32 {
+    use core_trash::Zones;
+    // Hardening: this runs ELEVATED. `token` (the parent PID) is interpolated
+    // into a %TEMP% path — reject anything but ASCII digits so a crafted token
+    // can never traverse out of %TEMP% (arbitrary admin file read/write).
+    if token.is_empty() || !token.bytes().all(|b| b.is_ascii_digit()) {
+        return 2;
+    }
+    let tmp = std::env::temp_dir();
+    let plan_path = tmp.join(format!("fyd-apply-{token}-plan.json"));
+    let report_path = tmp.join(format!("fyd-apply-{token}-report.json"));
+
+    let Ok(raw) = std::fs::read_to_string(&plan_path) else {
+        return 2;
+    };
+    let Ok(plan) = serde_json::from_str::<core_ipc::DeletionPlan>(&raw) else {
+        return 2;
+    };
+
+    // Hard-coded privileged zone — NOT derived from %WINDIR%: env vars propagate
+    // across same-user UAC elevation and are attacker-influenceable (classic
+    // windir UAC-bypass vector), so an env-derived zone would be an admin-delete
+    // EoP. Plain path is correct: core_trash::validate normalizes candidates with
+    // dunce (no \\?\ verbatim prefix) so a plain zone matches; junctions inside
+    // the zone are still resolved and refused by validate's symlink check.
+    let zones = Zones(vec![std::path::PathBuf::from("C:\\Windows\\Temp")]);
+
+    let report = match core_trash::execute_root_plan(&plan, &zones) {
+        Ok(report) => report,
+        Err(refusal) => refusal,
+    };
+    let json = serde_json::to_string(&report).unwrap_or_default();
+    if std::fs::write(&report_path, json).is_err() {
+        return 1;
+    }
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

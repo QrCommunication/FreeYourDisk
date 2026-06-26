@@ -16,7 +16,16 @@ pub struct Zones(pub Vec<PathBuf>);
 
 impl Zones {
     fn contains(&self, path: &Path) -> bool {
-        self.0.iter().any(|zone| path.starts_with(zone))
+        // Compare against each zone's *canonical* form so a plain zone matches a
+        // canonicalized candidate. `validate` resolves candidates to their real
+        // location (dunce strips Windows' \\?\ prefix and resolves macOS
+        // /tmp→/private/tmp); the zone must be resolved the same way or
+        // starts_with never matches. Falls back to the literal zone if it cannot
+        // be resolved (e.g. it does not exist on disk).
+        self.0.iter().any(|zone| {
+            let zone_real = dunce::canonicalize(zone).unwrap_or_else(|_| zone.clone());
+            path.starts_with(&zone_real)
+        })
     }
 }
 
@@ -41,11 +50,11 @@ pub fn validate(path: &Path, zones: &Zones) -> Result<PathBuf, TrashError> {
     let lexical = match (path.parent(), path.file_name()) {
         (Some(parent), Some(name)) => {
             let parent_real =
-                fs::canonicalize(parent).map_err(|e| TrashError::Io(e.to_string()))?;
+                dunce::canonicalize(parent).map_err(|e| TrashError::Io(e.to_string()))?;
             parent_real.join(name)
         }
         // path is "/" or ends with "..": resolve it whole.
-        _ => fs::canonicalize(path).map_err(|e| TrashError::Io(e.to_string()))?,
+        _ => dunce::canonicalize(path).map_err(|e| TrashError::Io(e.to_string()))?,
     };
 
     if !zones.contains(&lexical) {
@@ -56,7 +65,7 @@ pub fn validate(path: &Path, zones: &Zones) -> Result<PathBuf, TrashError> {
         .map(|m| m.file_type().is_symlink())
         .unwrap_or(false);
     if is_symlink {
-        let real = fs::canonicalize(path).map_err(|e| TrashError::Io(e.to_string()))?;
+        let real = dunce::canonicalize(path).map_err(|e| TrashError::Io(e.to_string()))?;
         if !zones.contains(&real) {
             return Err(TrashError::SymlinkEscape(path.to_path_buf()));
         }
@@ -96,6 +105,42 @@ pub fn to_trash(paths: &[PathBuf], zones: &Zones) -> ExecutionReport {
 /// Permanently delete every validated path (irreversible — opt-in only).
 pub fn delete_permanent(paths: &[PathBuf], zones: &Zones) -> ExecutionReport {
     execute(paths, zones, |real| remove(real).map_err(|e| e.to_string()))
+}
+
+/// Validate every path in `plan` against `zones` (all-or-nothing) and, if none
+/// escape, execute the deletion. `Ok` = executed report; `Err` = refusal report
+/// (nothing deleted). Shared by the privileged helper (Linux/macOS) and the
+/// Windows elevated executor so the allowlist has a single source of truth.
+pub fn execute_root_plan(
+    plan: &core_ipc::DeletionPlan,
+    zones: &Zones,
+) -> Result<core_ipc::ExecutionReport, core_ipc::ExecutionReport> {
+    let paths: Vec<PathBuf> = plan.items.iter().map(|item| item.path.clone()).collect();
+
+    let refusals: Vec<core_ipc::ItemError> = paths
+        .iter()
+        .filter_map(|path| match validate(path, zones) {
+            Ok(_) => None,
+            Err(err) => Some(core_ipc::ItemError {
+                path: path.clone(),
+                message: err.to_string(),
+            }),
+        })
+        .collect();
+
+    if !refusals.is_empty() {
+        return Err(core_ipc::ExecutionReport {
+            freed_bytes: 0,
+            deleted_count: 0,
+            errors: refusals,
+        });
+    }
+
+    let report = match plan.destination {
+        core_ipc::Destination::Trash => to_trash(&paths, zones),
+        core_ipc::Destination::Permanent => delete_permanent(&paths, zones),
+    };
+    Ok(report)
 }
 
 fn execute(
@@ -138,10 +183,14 @@ mod tests {
 
     #[test]
     fn validate_rejects_outside_zone() {
-        let dir = tempfile::tempdir().unwrap();
-        let zones = Zones(vec![dir.path().to_path_buf()]);
+        // Cross-platform: a real file in a different tempdir is out of zone.
+        let zone_dir = tempfile::tempdir().unwrap();
+        let outside_dir = tempfile::tempdir().unwrap();
+        let outside = outside_dir.path().join("victim.txt");
+        std::fs::write(&outside, b"x").unwrap();
+        let zones = Zones(vec![zone_dir.path().to_path_buf()]);
         assert!(matches!(
-            validate(Path::new("/etc/passwd"), &zones),
+            validate(&outside, &zones),
             Err(TrashError::OutsideZone(_))
         ));
     }
@@ -208,5 +257,72 @@ mod tests {
         assert_eq!(report.deleted_count, 0);
         assert_eq!(report.errors.len(), 1);
         assert!(victim.exists());
+    }
+
+    #[test]
+    fn execute_root_plan_refuses_whole_batch_on_escape() {
+        let zone = tempfile::tempdir().unwrap();
+        let inside = zone.path().join("junk.tmp");
+        std::fs::write(&inside, b"x").unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let escape = outside.path().join("keep.txt");
+        std::fs::write(&escape, b"important").unwrap();
+
+        let zones = Zones(vec![zone.path().to_path_buf()]);
+        let plan = core_ipc::DeletionPlan {
+            items: vec![
+                core_ipc::ScanItem {
+                    id: inside.to_string_lossy().into_owned(),
+                    path: inside.clone(),
+                    size_bytes: 1,
+                    last_access: None,
+                    kind: core_ipc::ItemKind::File,
+                    requires_root: true,
+                },
+                core_ipc::ScanItem {
+                    id: escape.to_string_lossy().into_owned(),
+                    path: escape.clone(),
+                    size_bytes: 9,
+                    last_access: None,
+                    kind: core_ipc::ItemKind::File,
+                    requires_root: true,
+                },
+            ],
+            destination: core_ipc::Destination::Permanent,
+            total_bytes: 10,
+            requires_root: true,
+        };
+
+        let result = execute_root_plan(&plan, &zones);
+        assert!(result.is_err(), "any escape must refuse the whole batch");
+        assert!(inside.exists(), "nothing deleted on refusal");
+        assert!(
+            escape.exists(),
+            "the out-of-zone file must never be touched"
+        );
+    }
+
+    #[test]
+    fn execute_root_plan_deletes_when_all_in_zone() {
+        let zone = tempfile::tempdir().unwrap();
+        let f = zone.path().join("junk.tmp");
+        std::fs::write(&f, vec![0u8; 50]).unwrap();
+        let zones = Zones(vec![zone.path().to_path_buf()]);
+        let plan = core_ipc::DeletionPlan {
+            items: vec![core_ipc::ScanItem {
+                id: f.to_string_lossy().into_owned(),
+                path: f.clone(),
+                size_bytes: 50,
+                last_access: None,
+                kind: core_ipc::ItemKind::File,
+                requires_root: true,
+            }],
+            destination: core_ipc::Destination::Permanent,
+            total_bytes: 50,
+            requires_root: true,
+        };
+        let result = execute_root_plan(&plan, &zones);
+        assert!(result.is_ok());
+        assert!(!f.exists(), "in-zone file deleted");
     }
 }

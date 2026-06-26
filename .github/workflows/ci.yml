@@ -93,3 +93,9 @@ jobs:
 
       - name: clippy (app only — privhelper is Linux/macOS)
         run: cargo clippy -p freeyourdisk --all-targets -- -D warnings
+
+      # Run the cross-platform core-trash tests on REAL Windows — including the
+      # zone-canonicalization regression guard for the elevated cleanup path. The
+      # clippy gate above is compile-only and cannot catch this runtime bug.
+      - name: test core-trash (Windows runtime)
+        run: cargo test -p core-trash

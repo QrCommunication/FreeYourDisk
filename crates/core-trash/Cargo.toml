@@ -10,6 +10,9 @@ repository.workspace = true
 core-ipc = { path = "../core-ipc" }
 trash = { workspace = true }
 thiserror = { workspace = true }
+# Normalizes Windows canonical paths (strips the \\?\ verbatim prefix) so zone
+# membership (starts_with) works; on Linux/macOS it delegates to fs::canonicalize.
+dunce = "1"
 
 [dev-dependencies]
 tempfile = { workspace = true }
