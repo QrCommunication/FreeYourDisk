@@ -417,6 +417,7 @@ name = "core-trash"
 version = "0.4.1"
 dependencies = [
  "core-ipc",
+ "dunce",
  "tempfile",
  "thiserror 2.0.18",
  "trash",

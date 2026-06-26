@@ -155,15 +155,13 @@ pub fn apply_elevated(token: &str) -> i32 {
         return 2;
     };
 
-    // Hard-coded, canonicalized privileged zone. NOT derived from %WINDIR%: env
-    // vars propagate across same-user UAC elevation and are attacker-influenceable
-    // (classic windir UAC-bypass vector) — an env-derived zone would be an
-    // admin-delete EoP. Canonicalize the trusted constant so the zone matches
-    // validate()'s canonical (\\?\-verbatim) candidate paths; otherwise
-    // starts_with() never matches and every item is silently refused (no-op).
-    let zone_base = std::path::Path::new("C:\\Windows\\Temp");
-    let zone = std::fs::canonicalize(zone_base).unwrap_or_else(|_| zone_base.to_path_buf());
-    let zones = Zones(vec![zone]);
+    // Hard-coded privileged zone — NOT derived from %WINDIR%: env vars propagate
+    // across same-user UAC elevation and are attacker-influenceable (classic
+    // windir UAC-bypass vector), so an env-derived zone would be an admin-delete
+    // EoP. Plain path is correct: core_trash::validate normalizes candidates with
+    // dunce (no \\?\ verbatim prefix) so a plain zone matches; junctions inside
+    // the zone are still resolved and refused by validate's symlink check.
+    let zones = Zones(vec![std::path::PathBuf::from("C:\\Windows\\Temp")]);
 
     let report = match core_trash::execute_root_plan(&plan, &zones) {
         Ok(report) => report,

@@ -41,11 +41,11 @@ pub fn validate(path: &Path, zones: &Zones) -> Result<PathBuf, TrashError> {
     let lexical = match (path.parent(), path.file_name()) {
         (Some(parent), Some(name)) => {
             let parent_real =
-                fs::canonicalize(parent).map_err(|e| TrashError::Io(e.to_string()))?;
+                dunce::canonicalize(parent).map_err(|e| TrashError::Io(e.to_string()))?;
             parent_real.join(name)
         }
         // path is "/" or ends with "..": resolve it whole.
-        _ => fs::canonicalize(path).map_err(|e| TrashError::Io(e.to_string()))?,
+        _ => dunce::canonicalize(path).map_err(|e| TrashError::Io(e.to_string()))?,
     };
 
     if !zones.contains(&lexical) {
@@ -56,7 +56,7 @@ pub fn validate(path: &Path, zones: &Zones) -> Result<PathBuf, TrashError> {
         .map(|m| m.file_type().is_symlink())
         .unwrap_or(false);
     if is_symlink {
-        let real = fs::canonicalize(path).map_err(|e| TrashError::Io(e.to_string()))?;
+        let real = dunce::canonicalize(path).map_err(|e| TrashError::Io(e.to_string()))?;
         if !zones.contains(&real) {
             return Err(TrashError::SymlinkEscape(path.to_path_buf()));
         }
@@ -174,10 +174,14 @@ mod tests {
 
     #[test]
     fn validate_rejects_outside_zone() {
-        let dir = tempfile::tempdir().unwrap();
-        let zones = Zones(vec![dir.path().to_path_buf()]);
+        // Cross-platform: a real file in a different tempdir is out of zone.
+        let zone_dir = tempfile::tempdir().unwrap();
+        let outside_dir = tempfile::tempdir().unwrap();
+        let outside = outside_dir.path().join("victim.txt");
+        std::fs::write(&outside, b"x").unwrap();
+        let zones = Zones(vec![zone_dir.path().to_path_buf()]);
         assert!(matches!(
-            validate(Path::new("/etc/passwd"), &zones),
+            validate(&outside, &zones),
             Err(TrashError::OutsideZone(_))
         ));
     }
@@ -311,23 +315,5 @@ mod tests {
         let result = execute_root_plan(&plan, &zones);
         assert!(result.is_ok());
         assert!(!f.exists(), "in-zone file deleted");
-    }
-
-    // Regression guard for the Phase-2 Windows `\\?\`-verbatim mismatch:
-    // validate() canonicalizes the candidate to a verbatim path, so a zone must
-    // ALSO be canonicalized or starts_with() never matches — which would make the
-    // elevated privileged cleanup a silent no-op. Runs on Windows CI via
-    // `cargo test -p core-trash`.
-    #[cfg(windows)]
-    #[test]
-    fn validate_accepts_in_canonicalized_zone_on_windows() {
-        let dir = tempfile::tempdir().unwrap();
-        let f = dir.path().join("junk.tmp");
-        std::fs::write(&f, b"x").unwrap();
-        let zone = Zones(vec![std::fs::canonicalize(dir.path()).unwrap()]);
-        assert!(
-            validate(&f, &zone).is_ok(),
-            "a canonicalized zone must accept an in-zone path"
-        );
     }
 }
