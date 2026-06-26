@@ -105,7 +105,7 @@ pub async fn disk_usage() -> Result<Vec<MountUsage>, String> {
 }
 
 /// Whether the weekly cleanup timer is enabled (systemd on Linux, launchd on macOS).
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 #[tauri::command]
 pub fn schedule_enabled() -> bool {
     std::process::Command::new("systemctl")
@@ -116,7 +116,7 @@ pub fn schedule_enabled() -> bool {
 }
 
 /// Enable or disable (and start/stop) the weekly cleanup timer.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 #[tauri::command]
 pub fn set_schedule(enabled: bool) -> Result<bool, String> {
     let action = if enabled { "enable" } else { "disable" };
@@ -128,6 +128,65 @@ pub fn set_schedule(enabled: bool) -> Result<bool, String> {
         Ok(enabled)
     } else {
         Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
+}
+
+#[cfg(target_os = "windows")]
+const CLEANUP_TASK_NAME: &str = "FreeYourDisk Cleanup";
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn schedule_enabled() -> bool {
+    std::process::Command::new("schtasks")
+        .args(["/Query", "/TN", CLEANUP_TASK_NAME])
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn set_schedule(enabled: bool) -> Result<bool, String> {
+    if enabled {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let action = format!("\"{}\" --headless --service=temp --apply", exe.display());
+        let out = std::process::Command::new("schtasks")
+            .args([
+                "/Create",
+                "/TN",
+                CLEANUP_TASK_NAME,
+                "/TR",
+                &action,
+                "/SC",
+                "WEEKLY",
+                "/D",
+                "SUN",
+                "/ST",
+                "03:00",
+                "/F",
+            ])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if out.status.success() {
+            Ok(true)
+        } else {
+            Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+        }
+    } else {
+        // Idempotent: deleting an absent task means "already disabled", not an
+        // error (mirrors the autostart disable). Real /Delete failures still surface.
+        if !schedule_enabled() {
+            return Ok(false);
+        }
+        let out = std::process::Command::new("schtasks")
+            .args(["/Delete", "/TN", CLEANUP_TASK_NAME, "/F"])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if out.status.success() {
+            Ok(false)
+        } else {
+            Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+        }
     }
 }
 

@@ -9,6 +9,7 @@
 use crate::settings;
 use serde::Serialize;
 use std::collections::HashSet;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::process::Command;
 use std::time::Duration;
 use sysinfo::Disks;
@@ -75,13 +76,16 @@ fn raise_and_alert(app: &AppHandle, alert: LowSpaceAlert) {
         alert.mount, alert.free_percent
     );
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     let _ = Command::new("notify-send")
         .arg("--app-name=FreeYourDisk")
         .arg("--urgency=critical")
         .arg("FreeYourDisk")
         .arg(&body)
         .status();
+
+    #[cfg(target_os = "windows")]
+    crate::toast::show("FreeYourDisk", &body);
 
     #[cfg(target_os = "macos")]
     {

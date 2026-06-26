@@ -166,9 +166,36 @@ pub fn apply_autostart(enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
-// Windows autostart (HKCU\...\Run) lands in Phase 6; no-op for now so the
-// settings save path succeeds.
+/// Create or remove the launch-at-login entry under
+/// `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`.
+/// Per-user (HKCU), so no elevation is required.
 #[cfg(target_os = "windows")]
-pub fn apply_autostart(_enabled: bool) -> Result<(), String> {
+pub fn apply_autostart(enabled: bool) -> Result<(), String> {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_SET_VALUE};
+    use winreg::RegKey;
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    // create_subkey_with_flags creates the key if missing, opens it otherwise.
+    let (run, _) = hkcu
+        .create_subkey_with_flags(
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            KEY_SET_VALUE,
+        )
+        .map_err(|e| e.to_string())?;
+
+    if enabled {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        // Quote the path so an install dir with spaces (e.g. "Program Files")
+        // is parsed as a single argument by the shell at login.
+        run.set_value("FreeYourDisk", &format!("\"{}\"", exe.display()))
+            .map_err(|e| e.to_string())?;
+    } else {
+        // Disabling when the value is absent must succeed (idempotent).
+        match run.delete_value("FreeYourDisk") {
+            Ok(()) => {}
+            Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.to_string()),
+        }
+    }
     Ok(())
 }

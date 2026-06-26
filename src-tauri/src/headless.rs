@@ -7,6 +7,7 @@
 use core_services::{Service, TempRoot, TempService};
 use core_trash::{to_trash, Zones};
 use std::path::{Path, PathBuf};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::process::Command;
 
 /// Outcome of a headless run.
@@ -21,12 +22,17 @@ pub struct HeadlessOutcome {
 /// Default age threshold for the scheduled cache cleanup.
 const MIN_AGE_DAYS: u32 = 7;
 
-/// Scan (and optionally trash) old files under `~/.cache`. User-only by
-/// construction: the single root is the user's cache, marked non-root.
-pub fn cache_cleanup(home: &Path, min_age_days: u32, apply: bool) -> HeadlessOutcome {
+/// Core scan-and-optionally-trash for an arbitrary root.
+/// `cache_root` is scanned; `zone_root` is the safety zone for trash.
+fn clean_root(
+    cache_root: &Path,
+    zone_root: &Path,
+    min_age_days: u32,
+    apply: bool,
+) -> HeadlessOutcome {
     let service = TempService {
         roots: vec![TempRoot {
-            path: home.join(".cache"),
+            path: cache_root.to_path_buf(),
             requires_root: false,
         }],
         min_age_days,
@@ -43,7 +49,7 @@ pub fn cache_cleanup(home: &Path, min_age_days: u32, apply: bool) -> HeadlessOut
         };
     }
 
-    let zones = Zones(vec![home.to_path_buf()]);
+    let zones = Zones(vec![zone_root.to_path_buf()]);
     let paths: Vec<PathBuf> = items.iter().map(|item| item.path.clone()).collect();
     let report = to_trash(&paths, &zones);
 
@@ -53,6 +59,13 @@ pub fn cache_cleanup(home: &Path, min_age_days: u32, apply: bool) -> HeadlessOut
         deleted_count: report.deleted_count,
         applied: true,
     }
+}
+
+/// Scan (and optionally trash) old files under `~/.cache`. User-only by
+/// construction: the single root is the user's cache, marked non-root.
+#[cfg(any(not(target_os = "windows"), test))]
+pub fn cache_cleanup(home: &Path, min_age_days: u32, apply: bool) -> HeadlessOutcome {
+    clean_root(&home.join(".cache"), home, min_age_days, apply)
 }
 
 fn humanize(bytes: u64) -> String {
@@ -87,11 +100,27 @@ fn notify(freed_bytes: u64, count: usize) {
     } else {
         format!("{} freed · {count} items", humanize(freed_bytes))
     };
+
+    #[cfg(target_os = "linux")]
     let _ = Command::new("notify-send")
         .arg("--app-name=FreeYourDisk")
         .arg("FreeYourDisk")
         .arg(body)
         .status();
+
+    #[cfg(target_os = "windows")]
+    crate::toast::show("FreeYourDisk", &body);
+
+    #[cfg(target_os = "macos")]
+    {
+        let safe = body.replace('"', "");
+        let _ = Command::new("osascript")
+            .args([
+                "-e",
+                &format!("display notification \"{safe}\" with title \"FreeYourDisk\""),
+            ])
+            .status();
+    }
 }
 
 /// CLI entry point for `--headless`. Returns a process exit code.
@@ -107,11 +136,29 @@ pub fn run(args: &[String]) -> i32 {
     }
 
     let apply = args.iter().any(|a| a == "--apply");
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"));
 
-    let outcome = cache_cleanup(&home, MIN_AGE_DAYS, apply);
+    #[cfg(not(target_os = "windows"))]
+    let outcome = {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/"));
+        cache_cleanup(&home, MIN_AGE_DAYS, apply)
+    };
+
+    #[cfg(target_os = "windows")]
+    let outcome = {
+        let local = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                std::env::var_os("USERPROFILE")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| PathBuf::from("C:\\"))
+                    .join("AppData")
+                    .join("Local")
+            });
+        let root = local.join("Temp");
+        clean_root(&root, &root, MIN_AGE_DAYS, apply)
+    };
 
     if apply {
         if outcome.deleted_count > 0 {
@@ -285,6 +332,21 @@ mod tests {
             .unwrap()
             .set_modified(SystemTime::now() - Duration::from_secs(days * 86_400))
             .unwrap();
+    }
+
+    #[test]
+    fn clean_root_scans_an_arbitrary_root() {
+        let root = tempfile::tempdir().unwrap();
+        let f = root.path().join("stale.tmp");
+        std::fs::write(&f, vec![0u8; 100]).unwrap();
+        backdate(&f, 30);
+        let outcome = clean_root(root.path(), root.path(), 7, false);
+        assert!(!outcome.applied);
+        assert!(
+            outcome.considered >= 1,
+            "old file in an arbitrary root should be a candidate"
+        );
+        assert!(f.exists(), "dry-run must not delete");
     }
 
     #[test]
