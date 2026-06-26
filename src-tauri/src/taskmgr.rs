@@ -155,12 +155,23 @@ pub fn kill_process(pid: u32, force: bool) -> bool {
     unsafe { libc::kill(pid as i32, sig) == 0 }
 }
 
-/// Windows stub. Real TerminateProcess / WM_CLOSE arrives in the Task-manager
-/// phase (Phase 4); returning `false` keeps `panic_kill`/`restart_process`
-/// harmless until then.
+/// Windows: TerminateProcess via sysinfo (always forceful — Windows has no
+/// graceful signal analogue, so `force` is ignored). Returns false if the
+/// process is already gone or the caller lacks rights (e.g. a protected system
+/// process terminated without elevation). A graceful WM_CLOSE path would need
+/// window enumeration (windows crate) — deferred; force-terminate is the
+/// task-manager's primary action.
 #[cfg(windows)]
-pub fn kill_process(_pid: u32, _force: bool) -> bool {
-    false
+pub fn kill_process(pid: u32, _force: bool) -> bool {
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[Pid::from_u32(pid)]),
+        true,
+        ProcessRefreshKind::everything(),
+    );
+    sys.process(Pid::from_u32(pid))
+        .map(|p| p.kill())
+        .unwrap_or(false)
 }
 
 /// Capture a process's command line/cwd, kill it, then relaunch it (best effort).
@@ -207,7 +218,7 @@ pub fn restart_process(pid: u32) -> Result<(), String> {
 }
 
 /// Critical process names we never panic-kill (Linux desktop daemons).
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const PROTECTED: &[&str] = &[
     "systemd",
     "init",
@@ -226,6 +237,30 @@ const PROTECTED: &[&str] = &[
     "memguardd",
     "mem-guard",
     "sshd",
+];
+
+/// Critical process names we never panic-kill (Windows system processes).
+/// `panic_kill` matches with `name.contains(...)` and sysinfo reports Windows
+/// names with the `.exe` suffix, so bare stems match (e.g. "svchost" matches
+/// "svchost.exe"). Over-matching only over-protects, which is the safe side.
+#[cfg(target_os = "windows")]
+const PROTECTED: &[&str] = &[
+    "System",
+    "Registry",
+    "smss",
+    "csrss",
+    "wininit",
+    "winlogon",
+    "services",
+    "lsass",
+    "svchost",
+    "dwm",
+    "fontdrvhost",
+    "explorer",
+    "ctfmon",
+    "RuntimeBroker",
+    "freeyourdisk",
+    "FreeYourDisk",
 ];
 
 /// Critical process names we never panic-kill (macOS system services).
