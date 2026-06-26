@@ -21,6 +21,7 @@ core-scan = { path = "../crates/core-scan" }
 sysinfo = "0.39"
 jwalk = { workspace = true }
 tauri-plugin-global-shortcut = "2"
+dirs = "5"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

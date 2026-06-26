@@ -21,9 +21,9 @@ pub struct Config {
 
 impl Config {
     pub fn detect() -> Self {
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/"));
+        // `dirs::home_dir()` resolves $HOME on unix and %USERPROFILE% on Windows.
+        let home = dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from(if cfg!(windows) { "C:\\" } else { "/" }));
         Self {
             search_root: home.clone(),
             home,
