@@ -115,6 +115,7 @@ export type AppSource =
   | "flatpak"
   | "snap"
   | "appimage"
+  | "app"
   | "registry"
   | "msix";
 

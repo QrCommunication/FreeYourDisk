@@ -4,6 +4,40 @@ All notable changes to FreeYourDisk are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-06-27
+
+### Added
+
+- **Windows 10/11 support (full feature parity).** FreeYourDisk now runs natively
+  on Windows alongside Linux and macOS, with the same dashboard, disk breakdown,
+  application manager, disk-health/SMART, task manager, scheduling and low-space
+  monitor:
+  - **Paths & scan.** Disk usage, app caches (`%LOCALAPPDATA%`/`%APPDATA%`) and
+    temp (`%LOCALAPPDATA%\Temp`, `%WINDIR%\Temp`) are enumerated with Windows-aware
+    roots; system size sums the real Windows system roots.
+  - **Privileged cleanup.** Elevation uses a UAC self-relaunch (PowerShell
+    `Start-Process -Verb RunAs`) into a headless `--apply` mode — no bundled
+    service. Deletions are re-validated against a hard-coded `C:\Windows\Temp`
+    zone; the elevated IPC uses unguessable random-nonce temp paths.
+  - **Applications.** Inventory from the registry Uninstall keys + MSIX/Store
+    packages (`Get-AppxPackage`); uninstall via the app's own uninstaller /
+    `Remove-AppxPackage`; update detection + best-effort update via `winget`.
+  - **Disk health / SMART.** Disk list + uptime via `sysinfo`; SMART read through
+    an elevated `smartctl` (guided `winget install smartmontools`).
+  - **Task manager.** Process termination (`TerminateProcess` via `sysinfo`) with
+    a Windows critical-process safelist.
+  - **Scheduling & UX.** Weekly cleanup via the Task Scheduler (`schtasks`);
+    autostart via the `HKCU\…\Run` key; native WinRT toast notifications.
+- **Unsigned NSIS installer** built on a Windows runner (`windows.yml`), bundling
+  the WebView2 bootstrapper.
+
+### Notes
+
+- The Windows installer is unsigned (no Authenticode certificate); SmartScreen may
+  warn on first run. Code signing can be added later via certificate secrets.
+- Toast notifications currently display under the PowerShell app identity; a
+  dedicated Start-menu AppUserModelID is a future refinement.
+
 ## [0.4.1] - 2026-06-25
 
 ### Added
