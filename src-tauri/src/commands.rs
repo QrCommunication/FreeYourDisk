@@ -104,7 +104,7 @@ pub async fn disk_usage() -> Result<Vec<MountUsage>, String> {
     .map_err(|e| e.to_string())
 }
 
-/// Whether the weekly cleanup timer is enabled (systemd on Linux, launchd on macOS).
+/// Whether the weekly cleanup timer is enabled (systemd user timer).
 #[cfg(target_os = "linux")]
 #[tauri::command]
 pub fn schedule_enabled() -> bool {

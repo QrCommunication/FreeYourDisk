@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Installed-application inventory: apt (dpkg), flatpak, snap and AppImages,
-//! ranked by disk space. Supports batch uninstall and batch update; checking
-//! for newer versions is a separate, on-demand pass.
+//! Installed-application inventory: apt (dpkg), flatpak, snap and AppImages
+//! on Linux; `.app` bundles on macOS; registry entries and MSIX packages on
+//! Windows. Ranked by disk space. Supports batch uninstall and batch update;
+//! checking for newer versions is a separate, on-demand pass.
 
 use serde::Serialize;
 use std::collections::HashSet;
@@ -16,7 +17,7 @@ pub struct AppEntry {
     /// `appimage:/abs/path`.
     pub id: String,
     pub name: String,
-    /// "apt" | "flatpak" | "snap" | "appimage"
+    /// "apt" | "flatpak" | "snap" | "appimage" | "app" (macOS) | "registry" | "msix" (Windows)
     pub source: String,
     pub version: Option<String>,
     pub size_bytes: u64,
