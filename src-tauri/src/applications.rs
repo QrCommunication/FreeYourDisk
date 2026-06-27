@@ -427,6 +427,10 @@ fn detect_msix() -> Vec<AppEntry> {
         if pkg.signature_kind.as_deref() == Some("System") {
             continue;
         }
+        // Best-effort: C:\Program Files\WindowsApps is ACL-restricted, so
+        // cached_dir_total usually cannot enumerate a Store app without
+        // elevation and returns 0 (the entry still lists; it just sorts low).
+        // There is no reliable non-admin API for MSIX install size.
         let size = pkg
             .install_location
             .as_deref()
