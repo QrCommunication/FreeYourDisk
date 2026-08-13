@@ -23,7 +23,7 @@ jwalk = { workspace = true }
 tauri-plugin-global-shortcut = "2"
 dirs = "6"
 # CSPRNG for unguessable elevated-IPC temp file tokens (TOCTOU hardening).
-getrandom = "0.2"
+getrandom = "0.4"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
