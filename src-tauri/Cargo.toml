@@ -21,9 +21,9 @@ core-scan = { path = "../crates/core-scan" }
 sysinfo = "0.39"
 jwalk = { workspace = true }
 tauri-plugin-global-shortcut = "2"
-dirs = "6"
+dirs = "7"
 # CSPRNG for unguessable elevated-IPC temp file tokens (TOCTOU hardening).
-getrandom = "0.2"
+getrandom = "0.4"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
