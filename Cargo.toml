@@ -21,7 +21,7 @@ repository = "https://github.com/rony/FreeYourDisk"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-jwalk = "0.8"
+jwalk = "0.9"
 rayon = "1"
 # Local-only git operations: no https/ssh transport needed → lighter deps.
 git2 = { version = "0.21", default-features = false }
