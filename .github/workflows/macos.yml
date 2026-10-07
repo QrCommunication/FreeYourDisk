@@ -73,7 +73,7 @@ jobs:
         run: cargo install tauri-cli --locked
 
       - name: Build unsigned native app bundle
-        run: cargo tauri build --target "$TARGET" --bundles app --config tauri.macos.bundle.conf.json
+        run: cargo tauri build --target "$TARGET" --bundles app --config src-tauri/tauri.macos.bundle.conf.json
         env:
           TARGET: ${{ matrix.target }}
 
