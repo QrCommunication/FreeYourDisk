@@ -59,14 +59,23 @@ affichée honnêtement au lieu de gonfler « Système ».
 ### Applications
 
 Inventaire des applications installées depuis les gestionnaires Linux et les
-**AppImages**, le registre/MSIX Windows et les bundles macOS `.app`, classées
-par espace disque. Les mises à jour affichent leur fournisseur et leurs
-versions : **apt**, **flatpak**, **snap**, **winget** avec identifiant exact et
-les formules/casks Homebrew sont actualisables en lot. Les AppImages et bundles
-`.app` copiés manuellement restent visibles avec leur motif, sans action de mise
-à jour trompeuse puisqu'ils n'ont pas de canal sûr standard. Les paquets système
-essentiels sont **protégés** (mise à jour seule, désinstallation bloquée). Les
-dossiers d'applications sont exclus des autres scans.
+**AppImages**, le registre/MSIX Windows et les bundles macOS `.app`. L’ouverture
+de cette vue charge uniquement l’inventaire : elle ne lance ni calcul récursif de
+la taille des dossiers d’applications ni vérification réseau des mises à jour.
+Les dossiers d’applications restent donc visibles avec une taille non calculée,
+ce qui préserve la réactivité même lorsqu’ils contiennent beaucoup de fichiers.
+
+La vérification des mises à jour est déclenchée explicitement avec le bouton
+prévu dans l’interface. Lorsqu’ils sont disponibles sur le système, les
+gestionnaires de paquets affichent leur fournisseur et leurs versions : **apt**,
+**flatpak**, **snap**, **winget** et les formules/casks Homebrew. Les AppImages
+et bundles `.app` copiés manuellement restent visibles avec leur motif, sans
+action de mise à jour trompeuse puisqu’ils n’ont pas de canal sûr standard. Les
+paquets système essentiels sont **protégés** (mise à jour seule,
+désinstallation bloquée). Les dossiers d’applications sont exclus des autres
+scans.
+
+![Vue Applications de FreeYourDisk : inventaire installé et vérification explicite des mises à jour](docs/screenshots/applications.png)
 
 ### Santé des disques
 

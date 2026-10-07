@@ -55,11 +55,25 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
 
+      - name: Stage target-matched helper as a Tauri bundle resource
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          SOURCE="target/$TARGET/release/freeyourdisk-helper"
+          RESOURCE_SOURCE="target/release/freeyourdisk-helper"
+
+          test -x "$SOURCE"
+          mkdir -p "$(dirname "$RESOURCE_SOURCE")"
+          install -m 0755 "$SOURCE" "$RESOURCE_SOURCE"
+          cmp -s "$SOURCE" "$RESOURCE_SOURCE"
+
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked
 
       - name: Build unsigned native app bundle
-        run: cargo tauri build --target "$TARGET" --bundles app
+        run: cargo tauri build --target "$TARGET" --bundles app --config tauri.macos.bundle.conf.json
         env:
           TARGET: ${{ matrix.target }}
 
@@ -110,15 +124,19 @@ jobs:
         run: |
           set -euo pipefail
           BUNDLE_DIR="target/$TARGET/release/bundle/macos"
-          APP_COUNT="$(find "$BUNDLE_DIR" -maxdepth 1 -type d -name '*.app' -print | wc -l | tr -d ' ')"
-          test "$APP_COUNT" -eq 1
-          APP="$(find "$BUNDLE_DIR" -maxdepth 1 -type d -name '*.app' -print -quit)"
-          HELPER="target/$TARGET/release/freeyourdisk-helper"
+          shopt -s nullglob
+          APPS=("$BUNDLE_DIR"/*.app)
+          shopt -u nullglob
+          test "${#APPS[@]}" -eq 1
+          APP="${APPS[0]}"
+          test -d "$APP"
+          HELPER="target/release/freeyourdisk-helper"
           DESTINATION="$APP/Contents/Resources/freeyourdisk-helper"
 
+          # Tauri copied the target-matched helper through bundle.resources.
           test -x "$HELPER"
-          cp "$HELPER" "$DESTINATION"
-          chmod 0755 "$DESTINATION"
+          test -x "$DESTINATION"
+          cmp -s "$HELPER" "$DESTINATION"
 
           # Nested code must be signed before the containing app bundle.
           codesign --force --options runtime --timestamp --sign "$IDENTITY" "$DESTINATION"
@@ -174,9 +192,16 @@ jobs:
           trap cleanup EXIT
 
           hdiutil attach "$DMG_PATH" -readonly -nobrowse -mountpoint "$MOUNT_POINT"
-          APP_COUNT="$(find "$MOUNT_POINT" -maxdepth 1 -type d -name '*.app' -print | wc -l | tr -d ' ')"
-          test "$APP_COUNT" -eq 1
-          APP="$(find "$MOUNT_POINT" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          shopt -s nullglob
+          APPS=("$MOUNT_POINT"/*.app)
+          shopt -u nullglob
+          test "${#APPS[@]}" -eq 1
+          APP="${APPS[0]}"
+          test -d "$APP"
+          HELPER="$APP/Contents/Resources/freeyourdisk-helper"
+
+          test -x "$HELPER"
+          codesign --verify --strict --verbose=2 "$HELPER"
           codesign --verify --deep --strict --verbose=2 "$APP"
 
       - name: Upload signed and notarized DMG

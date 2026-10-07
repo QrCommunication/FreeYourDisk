@@ -268,6 +268,21 @@ fn detect_snap() -> Vec<AppEntry> {
 
 // ---- AppImages & app folders ---------------------------------------------
 
+/// Build the lightweight inventory entry for an unpacked application folder.
+/// Folder byte totals are deliberately not computed while this inventory opens.
+#[cfg(target_os = "linux")]
+fn app_folder_entry(path: &Path, name: String, requires_root: bool) -> AppEntry {
+    AppEntry {
+        id: format!("appimage:{}", path.to_string_lossy()),
+        name,
+        source: "appimage".into(),
+        version: None,
+        size_bytes: 0,
+        requires_root,
+        protected: false,
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn detect_appimages() -> Vec<AppEntry> {
     let h = home();
@@ -304,19 +319,12 @@ fn detect_appimages() -> Vec<AppEntry> {
                     protected: false,
                 });
             } else if meta.is_dir() && (dir.ends_with("Applications") || dir == Path::new("/opt")) {
-                let size = core_scan::cache::cached_dir_total(&path);
-                if size == 0 {
-                    continue;
-                }
-                apps.push(AppEntry {
-                    id: format!("appimage:{}", path.to_string_lossy()),
-                    name,
-                    source: "appimage".into(),
-                    version: None,
-                    size_bytes: size,
-                    requires_root: !path.starts_with(&h),
-                    protected: false,
-                });
+                // Keep application folders visible, but never recursively walk
+                // them while opening the Applications tab.  A recursive size
+                // calculation can traverse a whole mounted tree below /opt or
+                // ~/Applications and make the UI look frozen.  `0` explicitly
+                // means that the folder size is not calculated in this view.
+                apps.push(app_folder_entry(&path, name, !path.starts_with(&h)));
             }
         }
     }
@@ -595,94 +603,141 @@ fn within_macos_app_base(path: &Path) -> bool {
 }
 
 /// Applications with a newer version available (best-effort, may use the
-/// network).  The report also makes AppImages explicit: their upstream update
-/// mechanism is not standardised, so FreeYourDisk must not overwrite them.
+/// network).  This must remain independent from `list()`: checking for package
+/// updates happens when the Applications panel opens, while `list()` can walk
+/// large user directories to discover AppImages and unpacked applications.
+/// AppImages deliberately do not appear here because they have no standard,
+/// safe update protocol.
 #[cfg(target_os = "linux")]
-pub fn updates() -> AppUpdatesReport {
-    let inventory = list();
-    let by_id: std::collections::HashMap<&str, &AppEntry> =
-        inventory.iter().map(|app| (app.id.as_str(), app)).collect();
+fn parse_apt_updates(output: &str) -> Vec<AppUpdate> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let (package_and_source, rest) = line.split_once(char::is_whitespace)?;
+            let package = package_and_source.split('/').next()?.trim();
+            let available_version = rest.split_whitespace().next()?.trim();
+            let current_version = rest
+                .split_once("[upgradable from:")?
+                .1
+                .strip_suffix(']')?
+                .trim();
+            if !safe_value(package) || available_version.is_empty() || current_version.is_empty() {
+                return None;
+            }
+            Some(available_update(
+                format!("apt:{package}"),
+                package,
+                "apt",
+                Some(current_version.to_owned()),
+                Some(available_version.to_owned()),
+            ))
+        })
+        .collect()
+}
+
+/// Flatpak exposes the target version from the remote.  It does not include
+/// the locally installed version in `remote-ls --updates`, so that field stays
+/// empty instead of forcing a separate inventory query.
+#[cfg(target_os = "linux")]
+fn parse_flatpak_updates(output: &str) -> Vec<AppUpdate> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split('\t').collect();
+            let application = fields.first()?.trim();
+            let name = fields.get(1).map(|value| value.trim()).unwrap_or_default();
+            let available_version = fields.get(2).map(|value| value.trim()).unwrap_or_default();
+            if !safe_value(application) {
+                return None;
+            }
+            Some(available_update(
+                format!("flatpak:{application}"),
+                if name.is_empty() { application } else { name },
+                "flatpak",
+                None,
+                (!available_version.is_empty()).then(|| available_version.to_owned()),
+            ))
+        })
+        .collect()
+}
+
+/// `snap refresh --list` reports the version that can be installed, but not
+/// the currently installed version.  A strict package-name guard also avoids
+/// treating localised prose such as "all snaps are up to date" as a package.
+#[cfg(target_os = "linux")]
+fn parse_snap_updates(output: &str) -> Vec<AppUpdate> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let name = fields.next()?;
+            let available_version = fields.next()?;
+            let valid_name = !name.is_empty()
+                && !name.starts_with('-')
+                && !name.ends_with('-')
+                && name.chars().all(|character| {
+                    character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
+                });
+            if !valid_name || available_version.is_empty() {
+                return None;
+            }
+            Some(available_update(
+                format!("snap:{name}"),
+                name,
+                "snap",
+                None,
+                Some(available_version.to_owned()),
+            ))
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn linux_updates_report(
+    apt_output: Option<&str>,
+    flatpak_output: Option<&str>,
+    snap_output: Option<&str>,
+) -> AppUpdatesReport {
     let mut entries = Vec::new();
-    // apt: uses the local index (no root). Lines: "pkg/repo version arch [upgradable from: ...]"
-    if let Some(list) = run("apt", &["list", "--upgradable"]) {
-        for line in list.lines() {
-            if let Some(pkg) = line.split('/').next() {
-                let id = format!("apt:{}", pkg.trim());
-                if line.contains("upgradable") {
-                    let Some(app) = by_id.get(id.as_str()) else {
-                        continue;
-                    };
-                    let available_version = line
-                        .split_whitespace()
-                        .nth(1)
-                        .filter(|version| !version.is_empty())
-                        .map(str::to_owned);
-                    entries.push(available_update(
-                        id,
-                        app.name.clone(),
-                        "apt",
-                        app.version.clone(),
-                        available_version,
-                    ));
-                }
-            }
-        }
+    if let Some(output) = apt_output {
+        entries.extend(parse_apt_updates(output));
     }
-    // flatpak updates.
-    if let Some(list) = run(
-        "flatpak",
-        &["remote-ls", "--updates", "--columns=application"],
-    ) {
-        for app in list.lines() {
-            let app = app.trim();
-            if !app.is_empty() {
-                let id = format!("flatpak:{app}");
-                if let Some(installed) = by_id.get(id.as_str()) {
-                    entries.push(available_update(
-                        id,
-                        installed.name.clone(),
-                        "flatpak",
-                        installed.version.clone(),
-                        None,
-                    ));
-                }
-            }
-        }
+    if let Some(output) = flatpak_output {
+        entries.extend(parse_flatpak_updates(output));
     }
-    // snap refresh candidates.
-    if let Some(list) = run("snap", &["refresh", "--list"]) {
-        for line in list.lines().skip(1) {
-            let fields: Vec<&str> = line.split_whitespace().collect();
-            if let Some(name) = fields.first() {
-                let id = format!("snap:{name}");
-                if let Some(installed) = by_id.get(id.as_str()) {
-                    entries.push(available_update(
-                        id,
-                        installed.name.clone(),
-                        "snap",
-                        installed.version.clone(),
-                        fields.get(1).map(|version| (*version).to_owned()),
-                    ));
-                }
-            }
-        }
+    if let Some(output) = snap_output {
+        entries.extend(parse_snap_updates(output));
     }
-    entries.extend(
-        inventory
-            .iter()
-            .filter(|app| app.source == "appimage")
-            .map(|app| {
-                non_automatic_update(
-                    app.id.clone(),
-                    app.name.clone(),
-                    "appimage",
-                    app.version.clone(),
-                    "AppImage and unpacked application folders have no standard safe update channel.",
-                )
-            }),
-    );
     entries.sort_by_key(|entry| entry.name.to_lowercase());
     AppUpdatesReport { entries }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_update_candidates() -> AppUpdatesReport {
+    // Each query has bounded package-manager output.  Do not call `list()`
+    // here: it discovers AppImages by scanning user directories and made the
+    // Applications tab appear to freeze on machines with large Downloads/opt.
+    let apt_output = run("apt", &["list", "--upgradable"]);
+    let flatpak_output = run(
+        "flatpak",
+        &[
+            "remote-ls",
+            "--updates",
+            "--app",
+            "--columns=application,name,version",
+        ],
+    );
+    let snap_output = run("snap", &["refresh", "--list"]);
+    linux_updates_report(
+        apt_output.as_deref(),
+        flatpak_output.as_deref(),
+        snap_output.as_deref(),
+    )
+}
+
+#[cfg(target_os = "linux")]
+pub fn updates() -> AppUpdatesReport {
+    linux_update_candidates()
 }
 
 fn split_ids(ids: &[String], prefix: &str) -> Vec<String> {
@@ -1110,45 +1165,101 @@ pub fn update(ids: &[String]) -> AppActionReport {
 
 /// Batch update.
 #[cfg(target_os = "linux")]
+#[derive(Default)]
+struct LinuxUpdateTargets {
+    apt: Vec<String>,
+    snap: Vec<String>,
+    flatpak: Vec<String>,
+}
+
+/// Select update targets from an already-fresh package-manager candidate set.
+/// This deliberately does not consult `list()`: presentation inventory is
+/// capped and may inspect AppImage roots, neither of which is appropriate for
+/// authorising a package-manager update action.
+#[cfg(target_os = "linux")]
+fn select_linux_update_targets(
+    ids: &[String],
+    available: &HashSet<String>,
+    report: &mut AppActionReport,
+) -> LinuxUpdateTargets {
+    let mut targets = LinuxUpdateTargets::default();
+    let mut seen = HashSet::new();
+
+    for id in ids {
+        if id.starts_with("appimage:") {
+            report.errors.push(format!(
+                "{id}: AppImages and unpacked application folders do not have a standard safe automatic update channel"
+            ));
+            continue;
+        }
+        let Some((provider, value)) = id.split_once(':') else {
+            report.errors.push(format!("refused (bad update id): {id}"));
+            continue;
+        };
+        if !matches!(provider, "apt" | "snap" | "flatpak") || !safe_value(value) {
+            report.errors.push(format!("refused (bad update id): {id}"));
+            continue;
+        }
+        if !available.contains(id) {
+            report
+                .errors
+                .push(format!("refused (not currently upgradable): {id}"));
+            continue;
+        }
+        if !seen.insert(id.clone()) {
+            continue;
+        }
+        match provider {
+            "apt" => targets.apt.push(value.to_owned()),
+            "snap" => targets.snap.push(value.to_owned()),
+            "flatpak" => targets.flatpak.push(value.to_owned()),
+            _ => unreachable!("provider was allowlisted above"),
+        }
+    }
+
+    targets
+}
+
+#[cfg(target_os = "linux")]
 pub fn update(ids: &[String]) -> AppActionReport {
     let mut report = AppActionReport::default();
-    let known = validate_against_inventory(ids, &mut report, false);
-
-    for id in known.iter().filter(|id| id.starts_with("appimage:")) {
-        report.errors.push(format!(
-            "{id}: AppImages and unpacked application folders do not have a standard safe automatic update channel"
-        ));
-    }
-
-    let apt: Vec<String> = split_ids(&known, "apt:")
+    // Re-check against package managers' current candidates rather than the
+    // inventory.  APT's `--only-upgrade` is a second guard: it cannot install
+    // a package that is not already installed if the state changes after this
+    // check.
+    let available: HashSet<String> = linux_update_candidates()
+        .entries
         .into_iter()
-        .filter(|s| safe_value(s))
+        .filter(|entry| entry.can_update)
+        .map(|entry| entry.id)
         .collect();
-    if !apt.is_empty() {
+    let targets = select_linux_update_targets(ids, &available, &mut report);
+
+    if !targets.apt.is_empty() {
         let mut cmd = Command::new("pkexec");
         cmd.args(["apt-get", "install", "--only-upgrade", "-y", "--"])
-            .args(&apt);
-        exec(&mut report, &format!("apt upgrade ({})", apt.len()), cmd);
-    }
-    let snap: Vec<String> = split_ids(&known, "snap:")
-        .into_iter()
-        .filter(|s| safe_value(s))
-        .collect();
-    if !snap.is_empty() {
-        let mut cmd = Command::new("pkexec");
-        cmd.args(["snap", "refresh"]).args(&snap);
-        exec(&mut report, &format!("snap refresh ({})", snap.len()), cmd);
-    }
-    let flatpak: Vec<String> = split_ids(&known, "flatpak:")
-        .into_iter()
-        .filter(|s| safe_value(s))
-        .collect();
-    if !flatpak.is_empty() {
-        let mut cmd = Command::new("flatpak");
-        cmd.args(["update", "-y", "--"]).args(&flatpak);
+            .args(&targets.apt);
         exec(
             &mut report,
-            &format!("flatpak update ({})", flatpak.len()),
+            &format!("apt upgrade ({})", targets.apt.len()),
+            cmd,
+        );
+    }
+    if !targets.snap.is_empty() {
+        let mut cmd = Command::new("pkexec");
+        cmd.args(["snap", "refresh"]).args(&targets.snap);
+        exec(
+            &mut report,
+            &format!("snap refresh ({})", targets.snap.len()),
+            cmd,
+        );
+    }
+    if !targets.flatpak.is_empty() {
+        let mut cmd = Command::new("flatpak");
+        cmd.args(["update", "-y", "--"]).args(&targets.flatpak);
+        exec(
+            &mut report,
+            &format!("flatpak update ({})", targets.flatpak.len()),
             cmd,
         );
     }
@@ -1194,6 +1305,76 @@ mod tests {
         assert!(safe_value("org.example.App"));
         assert!(!safe_value(""));
         assert!(!safe_value("--assume-yes"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn apt_update_output_supplies_versions_without_an_inventory_scan() {
+        let updates = parse_apt_updates(
+            "Listing... Done\n\
+             freeyourdisk/stable 0.6.5 amd64 [upgradable from: 0.6.4]\n\
+             malformed package line\n",
+        );
+
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].id, "apt:freeyourdisk");
+        assert_eq!(updates[0].name, "freeyourdisk");
+        assert_eq!(updates[0].current_version.as_deref(), Some("0.6.4"));
+        assert_eq!(updates[0].available_version.as_deref(), Some("0.6.5"));
+        assert!(updates[0].can_update);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_update_report_never_invents_appimage_candidates() {
+        let report = linux_updates_report(
+            Some("freeyourdisk/stable 0.6.5 amd64 [upgradable from: 0.6.4]\n"),
+            Some("io.github.FreeYourDisk\tFreeYourDisk\t0.6.5\n"),
+            Some("Name Version Rev Size Publisher Notes\nfreeyourdisk 0.6.5 12 50MB QR -\n"),
+        );
+
+        assert_eq!(report.entries.len(), 3);
+        assert!(report
+            .entries
+            .iter()
+            .all(|entry| entry.provider != "appimage" && !entry.id.starts_with("appimage:")));
+        assert!(report.entries.iter().all(|entry| entry.can_update));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn snap_status_message_is_not_parsed_as_a_candidate() {
+        let updates = parse_snap_updates("Tous les paquets Snaps sont à jour.\n");
+        assert!(updates.is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn application_folder_entries_do_not_calculate_recursive_sizes() {
+        let entry = app_folder_entry(
+            Path::new("/opt/ExampleApplication"),
+            "ExampleApplication".into(),
+            true,
+        );
+
+        assert_eq!(entry.id, "appimage:/opt/ExampleApplication");
+        assert_eq!(entry.size_bytes, 0);
+        assert!(entry.requires_root);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn apt_candidate_is_authorised_without_being_in_the_display_inventory() {
+        let id = "apt:package-after-display-cap".to_owned();
+        let available = HashSet::from([id.clone()]);
+        let mut report = AppActionReport::default();
+
+        let targets = select_linux_update_targets(&[id], &available, &mut report);
+
+        assert_eq!(targets.apt, vec!["package-after-display-cap"]);
+        assert!(targets.snap.is_empty());
+        assert!(targets.flatpak.is_empty());
+        assert!(report.errors.is_empty());
     }
 
     #[cfg(target_os = "macos")]

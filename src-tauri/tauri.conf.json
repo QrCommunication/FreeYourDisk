@@ -4,7 +4,8 @@
   "identifier": "io.freeyourdisk",
   "build": {
     "frontendDist": "../ui/dist",
-    "devUrl": "http://localhost:5173"
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "cargo build --package freeyourdisk-helper --release"
   },
   "app": {
     "windows": [

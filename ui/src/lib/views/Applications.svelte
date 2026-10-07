@@ -151,9 +151,9 @@
   }
 
   onMount(async () => {
+    // Load the local inventory on entry. Update checks invoke package managers
+    // and can be expensive, so they remain an explicit user action.
     await load();
-    // Automatically surface available updates on open (quiet unless any exist).
-    void checkUpdates(false);
   });
 </script>
 

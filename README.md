@@ -56,13 +56,22 @@ inflating "system".
 ### Applications
 
 Inventory of installed apps from Linux package managers and AppImages, Windows
-registry/MSIX entries, and macOS `.app` bundles, ranked by disk space. Available
-updates are surfaced with their provider and versions: **apt**, **flatpak**,
-**snap**, exact-id **winget**, and Homebrew formulas/casks support batch update.
-AppImages and manually copied `.app` bundles remain visible with an explicit
-reason, but have no deceptive update action because they lack a standard safe
-update channel. Essential system packages are **protected** (update-only,
-uninstall blocked). App folders are excluded from the other scans.
+registry/MSIX entries, and macOS `.app` bundles. Opening the view reads that
+local inventory only: it does not recursively size application folders or run a
+package-manager update scan. This keeps the view responsive even when an app
+folder contains many files. Such folders remain listed with an uncalculated
+size; package-manager entries retain their available metadata.
+
+Select **Check for updates** to explicitly run a live update scan. Available
+updates are surfaced with their provider and versions: on Linux, **apt**,
+**flatpak**, and **snap**; on Windows, exact-id **winget**; and on macOS,
+Homebrew formulas and casks. AppImages and manually copied `.app` bundles
+remain visible with an explicit reason, but have no deceptive update action
+because they lack a standard safe update channel. Essential system packages are
+**protected** (update-only, uninstall blocked). App folders are excluded from
+the other scans.
+
+![FreeYourDisk Applications view showing installed applications and the explicit Check for updates action](docs/screenshots/applications.png)
 
 ### Disk health
 
