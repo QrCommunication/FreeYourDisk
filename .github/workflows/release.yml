@@ -278,7 +278,8 @@ jobs:
           xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
           xcrun stapler staple "$DMG"
           xcrun stapler validate "$DMG"
-          spctl -a -vvv -t open "$DMG"
+          # Disk images are assessed by their primary signature, not as executable apps.
+          spctl -a -vvv -t open --context context:primary-signature "$DMG"
           echo "path=$DMG" >> "$GITHUB_OUTPUT"
 
       - name: Verify stapled distribution artifact
