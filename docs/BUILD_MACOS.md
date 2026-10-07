@@ -52,6 +52,58 @@ l'empreinte du certificat conservée et le refus d'un mauvais mot de passe :
 bash packaging/macOS/test-prepare-signing-certificate.sh
 ```
 
+### Notarisation reprenable et bornée
+
+Les deux workflows utilisent Node.js 22 et
+`packaging/macOS/notarize-dmg.mjs`. Le module soumet chaque DMG une seule fois,
+sans `submit --wait`, puis affiche immédiatement son UUID public sous la forme
+`Notarization submission: <UUID>`. Toutes les attentes suivantes portent sur ce
+même identifiant : une interruption réseau ne provoque jamais un nouvel envoi.
+
+La commande accepte exactement trois arguments : un fichier `.dmg` existant,
+le nom du profil de notarisation déjà enregistré et le chemin explicite de son
+trousseau. Elle ne prend aucun mot de passe ni identifiant Apple en argument.
+`XCRUN_BIN` peut désigner un exécutable contrôlé pour les tests ; en production,
+la commande appelle `xcrun notarytool`.
+
+```bash
+node packaging/macOS/notarize-dmg.mjs "$DMG" fyd-notary "$KEYCHAIN_PATH"
+```
+
+L'envoi est limité à cinq minutes. L'attente autorise au maximum douze appels
+de dix minutes chacun, avec quinze secondes entre deux tentatives et une marge
+d'arrêt du processus de trente secondes. Ces limites ne s'additionnent pas en
+un délai illimité : le plafond global de **120 minutes inclut l'envoi, les
+attentes, les marges et les pauses**, et réduit ou refuse la dernière attente
+si nécessaire. Chaque processus dépassant son délai est arrêté par `SIGKILL`.
+L'étape de signature/notarisation des deux workflows dispose de 135 minutes
+pour permettre aussi les opérations de signature et les contrôles finaux.
+
+Seuls `In Progress`, un timeout de processus ou les erreurs réseau
+`NSURLErrorDomain` `-1005` et `-1001` permettent une reprise de l'attente. Une
+erreur d'authentification, un rejet `Invalid`/`Rejected`, une réponse JSON
+malformée, un UUID absent ou différent et tout statut inconnu sont terminaux.
+Même une réponse `Accepted` est refusée si le processus a échoué. Les logs
+conservent l'UUID et un statut synthétique, jamais les réponses brutes ni les
+informations de connexion.
+
+Un succès du module exige un JSON valide, l'UUID attendu, le statut `Accepted`
+et un code de sortie zéro. Il **ne remplace pas** les contrôles réellement
+exécutés par la CI : stapling et validation du ticket du DMG, vérification
+stricte `codesign` de l'application et du helper contenus dans le volume monté,
+puis évaluation Gatekeeper du DMG avec `context:primary-signature`. Ces contrôles
+restent obligatoires avant l'upload des artefacts et la publication. La CI
+n'agrafe actuellement pas directement le ticket sur le bundle `.app`.
+
+Les 57 contrôles automatisés utilisent un runner simulé et des fixtures CLI,
+sans compte Apple ni soumission réseau. Ils vérifient notamment l'envoi unique,
+les reprises sur le même UUID, les échecs fermés, les bornes temporelles et la
+présence immédiate de l'identifiant dans les logs :
+
+```bash
+node --test packaging/macOS/notarize-dmg.test.mjs
+```
+
 ## Build local de diagnostic
 
 Le build local doit être fait **sur un Mac** (Xcode, `codesign` et `notarytool`
@@ -127,24 +179,30 @@ the most predictable.
 
 ### Notariser et agrafer (diagnostic local seulement)
 
+Utiliser un profil `fyd-notary` déjà enregistré dans le trousseau sélectionné.
+Les informations de connexion se configurent séparément dans le trousseau ;
+elles ne doivent pas être copiées dans une commande de build ou dans les logs.
+L'application signée est contenue dans le DMG soumis à Apple.
+
 ```bash
-# One-time: store credentials (uses an app-specific password from appleid.apple.com)
-xcrun notarytool store-credentials fyd-notary \
-  --apple-id "you@example.com" --team-id "TEAMID" --password "app-specific-password"
-
-# Notarize the app
-ditto -c -k --keepParent "$APP" /tmp/FreeYourDisk.zip
-xcrun notarytool submit /tmp/FreeYourDisk.zip --keychain-profile fyd-notary --wait
-xcrun stapler staple "$APP"
-
-# Then sign + notarize the DMG too
 DMG="FreeYourDisk_0.6.5_aarch64.dmg"
+KEYCHAIN_PATH="$HOME/Library/Keychains/login.keychain-db"
 codesign --force --timestamp --sign "$IDENTITY" "$DMG"
-xcrun notarytool submit "$DMG" --keychain-profile fyd-notary --wait
+node packaging/macOS/notarize-dmg.mjs "$DMG" fyd-notary "$KEYCHAIN_PATH"
 xcrun stapler staple "$DMG"
+xcrun stapler validate "$DMG"
+codesign --verify --deep --strict --verbose=2 "$APP"
+codesign --verify --strict --verbose=2 "$APP/Contents/Resources/freeyourdisk-helper"
+spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
 ```
 
-Ship the stapled `.dmg`.
+Ne distribuer le DMG qu'après la réussite des contrôles obligatoires de la CI,
+notamment sur l'application et le helper du volume effectivement monté.
+Pour un diagnostic local complémentaire, il est également possible d'exécuter
+`xcrun stapler staple "$APP"`, `xcrun stapler validate "$APP"` et
+`spctl --assess --type execute --verbose=2 "$APP"`. Ces opérations directes
+sur le bundle sont hors CI et ne constituent pas une condition actuellement
+exécutée par les workflows.
 
 ## What works / what's degraded on macOS (v1)
 

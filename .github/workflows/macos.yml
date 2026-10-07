@@ -149,6 +149,7 @@ jobs:
       - name: Create, sign, notarize and staple DMG
         id: dmg
         shell: bash
+        timeout-minutes: 135
         env:
           APP_PATH: ${{ steps.app.outputs.app_path }}
           ARCH: ${{ matrix.arch }}
@@ -172,7 +173,7 @@ jobs:
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
             --keychain "$KEYCHAIN_PATH"
-          xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
+          node packaging/macOS/notarize-dmg.mjs "$DMG" "$PROFILE" "$KEYCHAIN_PATH"
           xcrun stapler staple "$DMG"
           xcrun stapler validate "$DMG"
           # Disk images need their primary-signature context, unlike executable apps.
