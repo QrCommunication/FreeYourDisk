@@ -4,7 +4,7 @@
 
 [English](README.md) · **Français**
 
-Un utilitaire de bureau Linux moderne qui analyse votre disque et **libère de
+Un utilitaire de bureau moderne pour **Linux, Windows et macOS** qui analyse votre disque et **libère de
 l'espace en toute sécurité** : fichiers temporaires, gros fichiers, worktrees
 git obsolètes, caches de dev, **applications installées** et **répartition par
 type de fichier** — autour d'un donut 3D d'utilisation, avec un modèle de
@@ -44,6 +44,8 @@ Construit avec **Tauri** (cœur Rust + WebView), sous licence **GPL-3.0-or-later
   `~/.cache` rate : caches Chromium/Electron sous `~/.config`, Flatpak
   (`~/.var/app/*/cache`), Snap et npm/yarn/bun.
 
+![Vue détaillée d'un service de nettoyage FreeYourDisk](docs/screenshots/service-view.png)
+
 ### Répartition par type de fichier
 
 Une barre de distribution cliquable qui couvre **tout le disque** : images,
@@ -56,12 +58,15 @@ affichée honnêtement au lieu de gonfler « Système ».
 
 ### Applications
 
-Inventaire des applications installées depuis **apt**, **flatpak**, **snap** et
-les **AppImages**, classées par espace disque, avec les mises à jour disponibles
-remontées à l'ouverture et un filtre « seulement les MAJ ». **Désinstallez** ou
-**mettez à jour en lot** la sélection ; les paquets système essentiels sont
-**protégés** (mise à jour seule, désinstallation bloquée). Les dossiers
-d'applications sont exclus des autres scans.
+Inventaire des applications installées depuis les gestionnaires Linux et les
+**AppImages**, le registre/MSIX Windows et les bundles macOS `.app`, classées
+par espace disque. Les mises à jour affichent leur fournisseur et leurs
+versions : **apt**, **flatpak**, **snap**, **winget** avec identifiant exact et
+les formules/casks Homebrew sont actualisables en lot. Les AppImages et bundles
+`.app` copiés manuellement restent visibles avec leur motif, sans action de mise
+à jour trompeuse puisqu'ils n'ont pas de canal sûr standard. Les paquets système
+essentiels sont **protégés** (mise à jour seule, désinstallation bloquée). Les
+dossiers d'applications sont exclus des autres scans.
 
 ### Santé des disques
 
@@ -101,9 +106,11 @@ l'immunité OOM pour rester réactive sous pression mémoire.
 
 ### Icône de la barre des tâches
 
-L'app vit dans le tray ; son menu ouvre un widget popover avec un résumé de
-l'utilisation disque et une action rapide. Fermer la fenêtre la garde active
-dans le tray.
+Quand la session de bureau fournit un tray compatible, son menu ouvre un widget
+popover avec un résumé de l'utilisation disque et une action rapide. Sans tray
+(notamment sur certaines sessions Linux), FreeYourDisk démarre quand même et la
+fermeture de la fenêtre principale la ferme normalement au lieu de la masquer
+sans moyen de la restaurer.
 
 ## Modèle de sécurité
 
@@ -123,9 +130,10 @@ FreeYourDisk repose sur cinq invariants non négociables :
 ### Moindre privilège
 
 L'interface tourne en utilisateur normal **sans privilèges**. Quand une action
-nécessite root (ex. `/var/tmp`, lecture SMART NVMe, suppression d'un paquet
-apt/snap), un **helper minimal** est invoqué via **Polkit / pkexec** — la
-WebView elle-même ne tourne jamais en root.
+nécessite une élévation (ex. `/var/tmp`, SMART ou paquets gérés), un **helper
+minimal** est invoqué par le mécanisme de la plateforme : Polkit / `pkexec` sous
+Linux, UAC sous Windows et dialogue administrateur natif sous macOS. La WebView
+elle-même ne tourne jamais en root ou administrateur.
 
 ## Stack technique
 
@@ -168,6 +176,27 @@ cargo tauri build          # produit les bundles deb, rpm et AppImage
 ```
 
 Le binaire autonome est dans `target/release/freeyourdisk`.
+
+### Artefacts prévus par la pipeline v0.6.5
+
+Après succès des contrôles de plateforme et des étapes de signature, la pipeline
+de tag est configurée pour produire les formats suivants. Cette liste décrit la
+sortie attendue de **v0.6.5** ; elle ne signifie pas que cette release est déjà
+publiée.
+
+| Plateforme | Artefact | Précision |
+| --- | --- | --- |
+| Linux | `.deb` | Paquet Debian/Ubuntu. |
+| Linux | `.rpm` | Paquet pour distributions RPM. |
+| Linux | `.AppImage` | Image portable ; les intégrations de gestionnaire de paquets ou helper root peuvent être absentes hors paquets natifs. |
+| Windows | NSIS `*.exe` | Installateur Windows. |
+| macOS Apple Silicon | `*_aarch64.dmg` | Artefact CI signé et notarisé. |
+| macOS Intel | `*_x86_64.dmg` | Artefact CI signé et notarisé. |
+
+La signature et la notarisation macOS passent par l'environnement GitHub
+`production`, après l'intégration et la signature du helper privilégié. Le
+guide [de build macOS](docs/BUILD_MACOS.md) détaille les deux architectures et
+les secrets nécessaires à cette étape.
 
 ## Organisation du projet
 

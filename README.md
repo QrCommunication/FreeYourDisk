@@ -41,6 +41,8 @@ Built with **Tauri** (Rust core + WebView), licensed **GPL-3.0-or-later**.
   Chromium/Electron caches under `~/.config`, Flatpak (`~/.var/app/*/cache`),
   Snap and npm/yarn/bun caches.
 
+![FreeYourDisk service view showing reclaimable files, selection controls, and cleanup preview](docs/screenshots/service-view.png)
+
 ### Breakdown by file type
 
 A clickable distribution bar that accounts for the **whole disk**: images,
