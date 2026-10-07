@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "check": "svelte-check --tsgo --tsconfig ./tsconfig.json",
     "lint": "prettier --check .",
     "format": "prettier --write .",
     "test": "vitest run"
@@ -19,6 +19,7 @@
     "@testing-library/svelte": "^5.2.4",
     "@tsconfig/svelte": "^5.0.4",
     "@types/three": "^0.186.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "eslint": "^10.10.0",
     "eslint-plugin-svelte": "^3.23.0",
     "jsdom": "^30.0.1",
@@ -27,7 +28,7 @@
     "svelte": "^5.57.0",
     "svelte-check": "^4.7.6",
     "tailwindcss": "^4.3.3",
-    "typescript": "^7.0.2",
+    "typescript": "^6.0.3",
     "vite": "^8.3.0",
     "vitest": "^5.0.0"
   },

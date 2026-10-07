@@ -78,6 +78,7 @@ fn available_update(
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn non_automatic_update(
     id: impl Into<String>,
     name: impl Into<String>,

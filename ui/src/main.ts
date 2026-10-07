@@ -35,12 +35,13 @@ function createFallback(message: string, isFailure = false): HTMLElement {
 if (!target) {
   console.error("FreeYourDisk frontend could not find its mount target.");
 } else {
+  const mountTarget = target;
   let fallback = createFallback(STARTUP_MESSAGE);
   let bootstrapped = false;
   let startupFailed = false;
   let startupTimeout: ReturnType<typeof window.setTimeout> | undefined;
 
-  target.replaceChildren(fallback);
+  mountTarget.replaceChildren(fallback);
 
   function clearStartupTimeout(): void {
     if (startupTimeout === undefined) {
@@ -61,7 +62,7 @@ if (!target) {
 
     startupFailed = true;
     fallback = createFallback(STARTUP_FAILURE_MESSAGE, true);
-    target.replaceChildren(fallback);
+    mountTarget.replaceChildren(fallback);
   }
 
   window.addEventListener("error", (event) => {
@@ -92,7 +93,7 @@ if (!target) {
         import("./lib/i18n"),
       ]);
 
-      mount(App, { target });
+      mount(App, { target: mountTarget });
       bootstrapped = true;
       clearStartupTimeout();
       fallback.remove();

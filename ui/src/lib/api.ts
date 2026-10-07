@@ -3,18 +3,10 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 // Mirror of the Rust `core-ipc` DTOs. Kept in lockstep with that crate.
 export type ServiceId =
-  | "temp"
-  | "big_files"
-  | "git_repos"
-  | "dev_cache"
-  | "app_cache";
+  "temp" | "big_files" | "git_repos" | "dev_cache" | "app_cache";
 export type Destination = "trash" | "permanent";
 export type ItemKind =
-  | "file"
-  | "dir"
-  | "git_worktree"
-  | "git_branch"
-  | "dev_cache";
+  "file" | "dir" | "git_worktree" | "git_branch" | "dev_cache";
 
 export interface ScanItem {
   id: string;
@@ -111,13 +103,7 @@ export interface TypeBucket {
 }
 
 export type AppSource =
-  | "apt"
-  | "flatpak"
-  | "snap"
-  | "appimage"
-  | "app"
-  | "registry"
-  | "msix";
+  "apt" | "flatpak" | "snap" | "appimage" | "app" | "registry" | "msix";
 
 export interface AppEntry {
   id: string;
