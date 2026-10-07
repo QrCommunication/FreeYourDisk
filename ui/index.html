@@ -5,9 +5,74 @@
     <link rel="icon" href="data:," />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FreeYourDisk</title>
+    <style>
+      html,
+      body {
+        min-height: 100%;
+        margin: 0;
+      }
+
+      #startup-fallback {
+        box-sizing: border-box;
+        display: grid;
+        min-height: 100vh;
+        place-items: center;
+        padding: 2rem;
+        background: #0b1018;
+        color: #f8fafc;
+        font-family: system-ui, sans-serif;
+        text-align: center;
+      }
+
+      #startup-fallback__content {
+        max-width: 32rem;
+      }
+
+      #startup-fallback h1,
+      #startup-fallback p {
+        margin: 0;
+      }
+
+      #startup-fallback h1 {
+        font-size: 1.25rem;
+      }
+
+      #startup-fallback p {
+        margin-top: 0.75rem;
+        line-height: 1.5;
+      }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <main
+        id="startup-fallback"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        aria-busy="true"
+      >
+        <div id="startup-fallback__content">
+          <h1>FreeYourDisk</h1>
+          <p id="startup-fallback__message">Démarrage de l’application…</p>
+        </div>
+      </main>
+    </div>
+    <script>
+      window.setTimeout(() => {
+        const fallback = document.getElementById("startup-fallback");
+        const message = document.getElementById("startup-fallback__message");
+
+        if (!fallback || !message) {
+          return;
+        }
+
+        fallback.setAttribute("role", "alert");
+        fallback.setAttribute("aria-busy", "false");
+        message.textContent =
+          "FreeYourDisk n’a pas pu charger son interface. Relancez l’application si le problème persiste.";
+      }, 8000);
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

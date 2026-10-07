@@ -29,6 +29,14 @@ use std::sync::{
 };
 use tauri::WindowEvent;
 
+#[cfg(target_os = "linux")]
+fn configure_linux_webkit_renderer() {
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        // Avoid a WebKitGTK DMA-BUF rendering bug that can leave the WebView blank.
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|arg| arg == "--headless") {
@@ -56,6 +64,9 @@ fn main() {
             .unwrap_or("");
         std::process::exit(headless::read_smart_elevated(token));
     }
+
+    #[cfg(target_os = "linux")]
+    configure_linux_webkit_renderer();
 
     // Stay alive and responsive under memory pressure (best effort).
     taskmgr::raise_priority();
