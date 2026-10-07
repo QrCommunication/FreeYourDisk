@@ -12,7 +12,10 @@ model.
 
 Built with **Tauri** (Rust core + WebView), licensed **GPL-3.0-or-later**.
 
-![FreeYourDisk dashboard](docs/screenshots/dashboard.png)
+![FreeYourDisk dashboard](docs/screenshots/dashboard-en.png)
+
+These screenshots show the English interface of FreeYourDisk 0.6.5 installed
+from its `.deb` package on Debian Linux, captured from the desktop application.
 
 ---
 
@@ -41,7 +44,7 @@ Built with **Tauri** (Rust core + WebView), licensed **GPL-3.0-or-later**.
   Chromium/Electron caches under `~/.config`, Flatpak (`~/.var/app/*/cache`),
   Snap and npm/yarn/bun caches.
 
-![FreeYourDisk service view showing reclaimable files, selection controls, and cleanup preview](docs/screenshots/service-view.png)
+![FreeYourDisk service view showing reclaimable files, selection controls, and cleanup preview](docs/screenshots/service-view-en.png)
 
 ### Breakdown by file type
 
@@ -71,7 +74,7 @@ because they lack a standard safe update channel. Essential system packages are
 **protected** (update-only, uninstall blocked). App folders are excluded from
 the other scans.
 
-![FreeYourDisk Applications view showing installed applications and the explicit Check for updates action](docs/screenshots/applications.png)
+![FreeYourDisk Applications view showing installed applications and the explicit Check for updates action](docs/screenshots/applications-en.png)
 
 ### Disk health
 
