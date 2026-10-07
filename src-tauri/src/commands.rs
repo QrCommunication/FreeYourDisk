@@ -446,9 +446,9 @@ pub async fn list_applications() -> Result<Vec<applications::AppEntry>, String> 
         .map_err(|e| e.to_string())
 }
 
-/// Ids of applications with a newer version available (best-effort).
+/// Application-update availability and supported update channels (best-effort).
 #[tauri::command]
-pub async fn app_updates() -> Result<Vec<String>, String> {
+pub async fn app_updates() -> Result<applications::AppUpdatesReport, String> {
     tauri::async_runtime::spawn_blocking(applications::updates)
         .await
         .map_err(|e| e.to_string())

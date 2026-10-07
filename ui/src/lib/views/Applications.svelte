@@ -11,14 +11,14 @@
     Lock,
     Funnel,
   } from "phosphor-svelte";
-  import { api, type AppEntry } from "../api";
+  import { api, type AppEntry, type AppUpdate } from "../api";
   import { humanizeBytes } from "../format";
   import { toasts } from "../stores";
   import StateBlock from "../components/StateBlock.svelte";
 
   let status = $state<"loading" | "done" | "error">("loading");
   let apps = $state<AppEntry[]>([]);
-  let updateIds = $state<Set<string>>(new Set());
+  let updates = $state<AppUpdate[]>([]);
   let selection = $state<Set<string>>(new Set());
   let checking = $state(false);
   let busy = $state<null | "uninstall" | "update">(null);
@@ -33,10 +33,21 @@
     app: "#8e8e93", // macOS app bundles (neutral grey)
     registry: "#0078d4", // Windows blue
     msix: "#5c2d91", // Microsoft purple
+    winget: "#0078d4",
+    "brew-formula": "#e06c3f",
+    "brew-cask": "#e06c3f",
+    "manual-app": "#8e8e93",
   };
 
   const protectedSet = $derived(
     new Set(apps.filter((a) => a.protected).map((a) => a.id)),
+  );
+  const updatesById = $derived(
+    new Map(updates.map((update) => [update.id, update])),
+  );
+  const updateIds = $derived(new Set(updatesById.keys()));
+  const availableUpdates = $derived(
+    updates.filter((update) => update.can_update),
   );
   const displayed = $derived(
     onlyUpdates ? apps.filter((a) => updateIds.has(a.id)) : apps,
@@ -46,7 +57,7 @@
     [...selection].filter((id) => !protectedSet.has(id)),
   );
   const selectedUpdatable = $derived(
-    [...selection].filter((id) => updateIds.has(id)),
+    [...selection].filter((id) => updatesById.get(id)?.can_update),
   );
 
   async function load() {
@@ -63,11 +74,11 @@
   async function checkUpdates(announce = true) {
     checking = true;
     try {
-      updateIds = new Set(await api.appUpdates());
-      if (announce || updateIds.size > 0) {
+      updates = (await api.appUpdates()).entries;
+      if (announce || availableUpdates.length > 0) {
         toasts.success(
           $_("applications.updates_found", {
-            values: { count: updateIds.size },
+            values: { count: availableUpdates.length },
           }),
         );
       }
@@ -130,7 +141,7 @@
               values: { count: report.succeeded.length },
             }),
           );
-      updateIds = new Set();
+      updates = [];
       await load();
     } catch {
       toasts.error($_("applications.action_failed"));
@@ -195,6 +206,72 @@
   {:else if apps.length === 0}
     <StateBlock kind="empty" title={$_("applications.none")} desc="" />
   {:else}
+    {#if updates.length > 0}
+      <section
+        class="border-line bg-surface mb-4 shrink-0 overflow-hidden rounded-xl border"
+        aria-label={$_("applications.updates_found", {
+          values: { count: availableUpdates.length },
+        })}
+      >
+        <div
+          class="border-line flex items-center justify-between border-b px-4 py-3"
+        >
+          <h2 class="text-ink text-sm font-semibold">
+            {$_("applications.updates_found", {
+              values: { count: availableUpdates.length },
+            })}
+          </h2>
+          <ArrowsClockwise size={16} class="text-savings" weight="bold" />
+        </div>
+        <ul class="divide-line divide-y">
+          {#each updates as update (update.id)}
+            <li class="px-4 py-3">
+              <div class="flex items-center gap-3">
+                {#if update.can_update}
+                  <input
+                    type="checkbox"
+                    class="accent-accent h-4 w-4 shrink-0"
+                    checked={selection.has(update.id)}
+                    onchange={() => toggle(update.id)}
+                    aria-label={update.name}
+                  />
+                {:else}
+                  <Package size={18} class="text-faint shrink-0" />
+                {/if}
+                <div class="min-w-0 flex-1">
+                  <p class="text-ink truncate text-sm font-medium">
+                    {update.name}
+                  </p>
+                  <p class="nums text-faint text-xs">
+                    {update.current_version ?? "—"}
+                    {#if update.available_version}
+                      <span aria-hidden="true">
+                        →
+                      </span>{update.available_version}
+                    {/if}
+                  </p>
+                </div>
+                <span
+                  class="rounded px-1.5 py-0.5 text-[10px] font-medium uppercase"
+                  style="color:{SOURCE_COLOR[
+                    update.provider
+                  ]}; background:color-mix(in oklab, {SOURCE_COLOR[
+                    update.provider
+                  ]} 16%, transparent)"
+                >
+                  {update.provider}
+                </span>
+              </div>
+              {#if update.reason}
+                <p class="text-muted mt-2 text-xs leading-relaxed">
+                  {update.reason}
+                </p>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
     <ul
       class="divide-line border-line bg-surface flex-1 divide-y overflow-y-auto rounded-xl border"
     >

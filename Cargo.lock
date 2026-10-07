@@ -385,7 +385,7 @@ dependencies = [
 
 [[package]]
 name = "core-ipc"
-version = "0.4.5"
+version = "0.6.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -393,7 +393,7 @@ dependencies = [
 
 [[package]]
 name = "core-scan"
-version = "0.4.5"
+version = "0.6.5"
 dependencies = [
  "jwalk",
  "rayon",
@@ -404,7 +404,7 @@ dependencies = [
 
 [[package]]
 name = "core-services"
-version = "0.4.5"
+version = "0.6.5"
 dependencies = [
  "core-ipc",
  "core-scan",
@@ -414,7 +414,7 @@ dependencies = [
 
 [[package]]
 name = "core-trash"
-version = "0.4.5"
+version = "0.6.5"
 dependencies = [
  "core-ipc",
  "dunce",
@@ -917,7 +917,7 @@ dependencies = [
 
 [[package]]
 name = "freeyourdisk"
-version = "0.4.5"
+version = "0.6.5"
 dependencies = [
  "core-ipc",
  "core-scan",
@@ -939,7 +939,7 @@ dependencies = [
 
 [[package]]
 name = "freeyourdisk-helper"
-version = "0.4.5"
+version = "0.6.5"
 dependencies = [
  "core-ipc",
  "core-trash",

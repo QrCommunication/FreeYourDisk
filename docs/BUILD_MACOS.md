@@ -1,14 +1,40 @@
-# Building FreeYourDisk for macOS
+# Construire et distribuer FreeYourDisk sur macOS
 
-FreeYourDisk now has cfg-gated macOS support. The Linux build is unaffected; the
-macOS-specific code (disk health via `diskutil`, privilege escalation via the
-native admin dialog, Homebrew SMART install, `.app` inventory, LaunchAgent
-autostart/schedule, `~/Library/Caches` cleanup) only compiles on macOS.
+La release **v0.6.5** fournit deux DMG macOS natifs :
+`FreeYourDisk_0.6.5_aarch64.dmg` pour Apple Silicon et
+`FreeYourDisk_0.6.5_x86_64.dmg` pour les Mac Intel. Le code spécifique à macOS
+(santé disque via `diskutil`, dialogue d'autorisation natif, installation SMART
+Homebrew, inventaire `.app`, LaunchAgent et caches `~/Library`) ne compile que
+sur macOS. Les builds Linux et Windows ne sont pas affectés.
 
-This must be built **on a Mac** (Xcode toolchain + codesign + notarytool are
-macOS-only). These steps assume Apple Silicon; for Intel, swap the target.
+## Release officielle : CI GitHub
 
-## 1. Prerequisites (on the Mac)
+La distribution est produite par les jobs macOS des workflows
+[release](../.github/workflows/release.yml) et
+[macos](../.github/workflows/macos.yml), sous l'environnement GitHub
+**`production`**. Un tag `v0.6.5` construit les deux architectures :
+
+| Architecture | Cible Rust | Runner | Artefact |
+| --- | --- | --- | --- |
+| Apple Silicon | `aarch64-apple-darwin` | `macos-14` | `FreeYourDisk_0.6.5_aarch64.dmg` |
+| Intel | `x86_64-apple-darwin` | runner Intel macOS | `FreeYourDisk_0.6.5_x86_64.dmg` |
+
+La CI importe le certificat Developer ID dans un trousseau éphémère, copie le
+helper dans le bundle, signe le helper puis l'application avec hardened runtime,
+crée et signe le DMG, le notarie, l'agrafe et le vérifie avant publication. Les
+secrets `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID` et
+`APPLE_APP_SPECIFIC_PASSWORD`, ainsi que la variable `APPLE_TEAM_ID`, doivent
+être définis dans `production`. Ils ne doivent jamais figurer dans le dépôt ou
+les logs. L'absence d'un de ces éléments doit faire échouer la release, jamais
+produire un DMG présenté comme signé.
+
+## Build local de diagnostic
+
+Le build local doit être fait **sur un Mac** (Xcode, `codesign` et `notarytool`
+sont propres à macOS). Il permet de diagnostiquer le bundle, mais ne remplace
+pas la CI signée et notarisée de distribution.
+
+### Prérequis
 
 ```bash
 xcode-select --install                      # Xcode Command Line Tools
@@ -19,39 +45,41 @@ cargo install tauri-cli --version "^2"
 brew install node pnpm                       # or corepack enable
 ```
 
-Apple Developer account: in **Keychain Access** make sure you have a
-**"Developer ID Application"** certificate (for distribution outside the App
-Store). Note your Team ID.
+Un build signé local requiert un certificat **Developer ID Application** et le
+Team ID correspondants. Pour une distribution officielle, préférer la CI : elle
+ne laisse pas le certificat ni le trousseau persister sur le poste de build.
 
-## 2. Build the frontend + the privileged helper
+### Compiler le frontend et le helper privilégié
 
 ```bash
 cd ui && pnpm install && pnpm build && cd ..
-cargo build --release -p freeyourdisk-helper      # the SMART/root helper
+# Apple Silicon : utiliser x86_64-apple-darwin sur un runner Intel
+cargo build --release --target aarch64-apple-darwin -p freeyourdisk-helper
 ```
 
-## 3. Build the app + DMG
+### Compiler l'application
 
 ```bash
-cargo tauri build --bundles app,dmg
-# → src-tauri/target/release/bundle/macos/FreeYourDisk.app
-# → src-tauri/target/release/bundle/dmg/FreeYourDisk_0.4.1_aarch64.dmg
+cargo tauri build --target aarch64-apple-darwin --bundles app
+# → target/aarch64-apple-darwin/release/bundle/macos/FreeYourDisk.app
+
+# Intel : compiler nativement avec la cible x86_64-apple-darwin.
 ```
 
-## 4. Bundle the privileged helper into the .app
+### Intégrer le helper privilégié dans le `.app`
 
 The helper is invoked as root (via the native auth dialog) for `/var/tmp`
 cleanup and SMART reads. It must live inside the bundle **before** signing:
 
 ```bash
-APP="src-tauri/target/release/bundle/macos/FreeYourDisk.app"
-cp target/release/freeyourdisk-helper "$APP/Contents/Resources/freeyourdisk-helper"
+APP="target/aarch64-apple-darwin/release/bundle/macos/FreeYourDisk.app"
+cp target/aarch64-apple-darwin/release/freeyourdisk-helper "$APP/Contents/Resources/freeyourdisk-helper"
 chmod +x "$APP/Contents/Resources/freeyourdisk-helper"
 ```
 
 (The app resolves it from `Contents/Resources/freeyourdisk-helper` at runtime.)
 
-## 5. Codesign (hardened runtime) — helper first, then the app
+### Codesign (hardened runtime) — helper avant l'application
 
 ```bash
 IDENTITY="Developer ID Application: YOUR NAME (TEAMID)"
@@ -73,7 +101,7 @@ If you prefer, set `APPLE_SIGNING_IDENTITY` and the helper as a tauri resource
 to let `cargo tauri build` sign automatically — but the manual order above is
 the most predictable.
 
-## 6. Notarize + staple
+### Notariser et agrafer (diagnostic local seulement)
 
 ```bash
 # One-time: store credentials (uses an app-specific password from appleid.apple.com)
@@ -86,7 +114,7 @@ xcrun notarytool submit /tmp/FreeYourDisk.zip --keychain-profile fyd-notary --wa
 xcrun stapler staple "$APP"
 
 # Then sign + notarize the DMG too
-DMG="src-tauri/target/release/bundle/dmg/FreeYourDisk_0.4.1_aarch64.dmg"
+DMG="FreeYourDisk_0.6.5_aarch64.dmg"
 codesign --force --timestamp --sign "$IDENTITY" "$DMG"
 xcrun notarytool submit "$DMG" --keychain-profile fyd-notary --wait
 xcrun stapler staple "$DMG"
@@ -105,10 +133,25 @@ Ship the stapled `.dmg`.
 | Task manager (CPU/RAM/swap, per-core, temp, kill) | Works (sysinfo); OOM-immunity is Linux-only |
 | Disk health — capacity / model / SSD / SMART | Works via `diskutil` + `smartctl`. **Real-time throughput graph reads 0** (not exposed without IOKit). Apple-internal NVMe SMART is often unsupported by smartctl. |
 | SMART tool install | `brew install smartmontools` (user-level, no root) |
-| Applications | `.app` bundles in /Applications + ~/Applications; uninstall = move to Trash. No update channel. |
+| Applications | Les formules et casks Homebrew peuvent être mis à jour avec leur identifiant exact. Les `.app` manuels restent inventoriés et désinstallables vers la Corbeille, mais leur motif d'absence de canal automatique est affiché. Les apps Mac App Store sont mises à jour uniquement par l'App Store : FreeYourDisk ne contourne ni son sandboxing ni ses reçus. |
 | Privileged actions (/var/tmp, SMART) | Native admin auth dialog (`osascript … with administrator privileges`) |
 | Autostart / weekly cleanup | LaunchAgent (`~/Library/LaunchAgents`) |
 | Low-space alert | `osascript display notification` |
 
-Throughput-via-IOKit and a richer macOS app inventory (Homebrew casks, Mac App
-Store) are the obvious next steps once the build is validated on hardware.
+Le débit via IOKit reste une évolution distincte. L'inventaire distingue déjà
+les casks/formules Homebrew gérés des bundles `.app` et applications Mac App
+Store qui ne disposent pas d'un canal de mise à jour sûr dans FreeYourDisk.
+
+## État de release v0.6.5 — 7 octobre 2026
+
+Cette section prévaut sur les formulations historiques du guide :
+
+- la distribution officielle fournit des DMG **Intel et Apple Silicon**, et non
+  un unique artefact Apple Silicon ;
+- la release est produite par la CI signée et notarisée de l'environnement
+  GitHub `production`, avec le helper embarqué puis signé avant le bundle ;
+- Homebrew formula et cask disposent d'un canal de mise à jour par identifiant
+  exact ; un bundle `.app` copié manuellement reste explicitement non
+  automatisable ;
+- les applications Mac App Store restent sous la responsabilité de l'App Store.
+  FreeYourDisk ne les met pas à jour et ne contourne pas ses protections.

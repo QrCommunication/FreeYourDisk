@@ -33,6 +33,69 @@ pub struct AppActionReport {
     pub errors: Vec<String>,
 }
 
+/// One result from the on-demand application update check.  `id` is an
+/// action identifier owned by the package manager, not a display name: callers
+/// must send it back unchanged to `update`.
+///
+/// Entries with `can_update == false` are deliberately included when we can
+/// identify an application that has no safe automatic channel (for example an
+/// AppImage or a manually copied macOS `.app`).  This keeps the UI honest
+/// instead of silently making those applications look unsupported.
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct AppUpdate {
+    pub id: String,
+    pub name: String,
+    /// Package manager or delivery channel: apt, flatpak, snap, winget, brew,
+    /// appimage, or manual-app.
+    pub provider: String,
+    pub current_version: Option<String>,
+    pub available_version: Option<String>,
+    pub can_update: bool,
+    /// Human-readable explanation when no automatic update is safe.
+    pub reason: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
+pub struct AppUpdatesReport {
+    pub entries: Vec<AppUpdate>,
+}
+
+fn available_update(
+    id: impl Into<String>,
+    name: impl Into<String>,
+    provider: impl Into<String>,
+    current_version: Option<String>,
+    available_version: Option<String>,
+) -> AppUpdate {
+    AppUpdate {
+        id: id.into(),
+        name: name.into(),
+        provider: provider.into(),
+        current_version,
+        available_version,
+        can_update: true,
+        reason: None,
+    }
+}
+
+fn non_automatic_update(
+    id: impl Into<String>,
+    name: impl Into<String>,
+    provider: impl Into<String>,
+    current_version: Option<String>,
+    reason: impl Into<String>,
+) -> AppUpdate {
+    AppUpdate {
+        id: id.into(),
+        name: name.into(),
+        provider: provider.into(),
+        current_version,
+        available_version: None,
+        can_update: false,
+        reason: Some(reason.into()),
+    }
+}
+
 #[cfg(target_os = "linux")]
 const APT_TOP: usize = 80;
 
@@ -531,17 +594,36 @@ fn within_macos_app_base(path: &Path) -> bool {
         })
 }
 
-/// Ids of applications with a newer version available (best-effort, may use the
-/// network). Returns the subset of `id`s that are upgradable.
+/// Applications with a newer version available (best-effort, may use the
+/// network).  The report also makes AppImages explicit: their upstream update
+/// mechanism is not standardised, so FreeYourDisk must not overwrite them.
 #[cfg(target_os = "linux")]
-pub fn updates() -> Vec<String> {
-    let mut out = Vec::new();
+pub fn updates() -> AppUpdatesReport {
+    let inventory = list();
+    let by_id: std::collections::HashMap<&str, &AppEntry> =
+        inventory.iter().map(|app| (app.id.as_str(), app)).collect();
+    let mut entries = Vec::new();
     // apt: uses the local index (no root). Lines: "pkg/repo version arch [upgradable from: ...]"
     if let Some(list) = run("apt", &["list", "--upgradable"]) {
         for line in list.lines() {
             if let Some(pkg) = line.split('/').next() {
+                let id = format!("apt:{}", pkg.trim());
                 if line.contains("upgradable") {
-                    out.push(format!("apt:{}", pkg.trim()));
+                    let Some(app) = by_id.get(id.as_str()) else {
+                        continue;
+                    };
+                    let available_version = line
+                        .split_whitespace()
+                        .nth(1)
+                        .filter(|version| !version.is_empty())
+                        .map(str::to_owned);
+                    entries.push(available_update(
+                        id,
+                        app.name.clone(),
+                        "apt",
+                        app.version.clone(),
+                        available_version,
+                    ));
                 }
             }
         }
@@ -554,19 +636,53 @@ pub fn updates() -> Vec<String> {
         for app in list.lines() {
             let app = app.trim();
             if !app.is_empty() {
-                out.push(format!("flatpak:{app}"));
+                let id = format!("flatpak:{app}");
+                if let Some(installed) = by_id.get(id.as_str()) {
+                    entries.push(available_update(
+                        id,
+                        installed.name.clone(),
+                        "flatpak",
+                        installed.version.clone(),
+                        None,
+                    ));
+                }
             }
         }
     }
     // snap refresh candidates.
     if let Some(list) = run("snap", &["refresh", "--list"]) {
         for line in list.lines().skip(1) {
-            if let Some(name) = line.split_whitespace().next() {
-                out.push(format!("snap:{name}"));
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            if let Some(name) = fields.first() {
+                let id = format!("snap:{name}");
+                if let Some(installed) = by_id.get(id.as_str()) {
+                    entries.push(available_update(
+                        id,
+                        installed.name.clone(),
+                        "snap",
+                        installed.version.clone(),
+                        fields.get(1).map(|version| (*version).to_owned()),
+                    ));
+                }
             }
         }
     }
-    out
+    entries.extend(
+        inventory
+            .iter()
+            .filter(|app| app.source == "appimage")
+            .map(|app| {
+                non_automatic_update(
+                    app.id.clone(),
+                    app.name.clone(),
+                    "appimage",
+                    app.version.clone(),
+                    "AppImage and unpacked application folders have no standard safe update channel.",
+                )
+            }),
+    );
+    entries.sort_by_key(|entry| entry.name.to_lowercase());
+    AppUpdatesReport { entries }
 }
 
 fn split_ids(ids: &[String], prefix: &str) -> Vec<String> {
@@ -677,11 +793,104 @@ fn remove_appimages(known: &[String], report: &mut AppActionReport) {
     }
 }
 
-/// macOS: `.app` bundles have no built-in update channel, so nothing is reported
-/// as upgradable here.
+/// Homebrew is intentionally resolved only through its documented default
+/// installation locations.  Searching an arbitrary PATH would allow a shell
+/// profile or another process to redirect a privileged update action.
 #[cfg(target_os = "macos")]
-pub fn updates() -> Vec<String> {
-    Vec::new()
+fn brew_path() -> Option<&'static str> {
+    ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+        .into_iter()
+        .find(|path| Path::new(path).is_file())
+}
+
+#[cfg(target_os = "macos")]
+fn brew_version(value: &serde_json::Value, field: &str) -> Option<String> {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_str)
+        .filter(|version| !version.is_empty())
+        .map(str::to_owned)
+        .or_else(|| {
+            value
+                .get("installed_versions")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|versions| versions.first())
+                .and_then(serde_json::Value::as_str)
+                .filter(|version| !version.is_empty())
+                .map(str::to_owned)
+        })
+}
+
+/// Only names understood by Homebrew's command line are accepted.  The value
+/// is still re-derived from `brew outdated` at update time, so an arbitrary UI
+/// id cannot select an unrelated formula or cask.
+#[cfg(target_os = "macos")]
+fn safe_brew_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('-')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '@' | '+' | '.' | '_' | '-' | '/'))
+}
+
+/// Homebrew's JSON report is the source of truth for formula and cask update
+/// ids.  Manually copied `.app` bundles remain visible as non-automatic
+/// entries, because replacing them safely is impossible without their own
+/// updater.
+#[cfg(target_os = "macos")]
+pub fn updates() -> AppUpdatesReport {
+    let inventory = list();
+    let mut entries: Vec<AppUpdate> = inventory
+        .iter()
+        .map(|app| {
+            non_automatic_update(
+                app.id.clone(),
+                app.name.clone(),
+                "manual-app",
+                app.version.clone(),
+                "This .app bundle was not discovered through a supported package manager.",
+            )
+        })
+        .collect();
+
+    let Some(brew) = brew_path() else {
+        entries.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+        return AppUpdatesReport { entries };
+    };
+    let Some(out) = run(brew, &["outdated", "--json=v2"]) else {
+        entries.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+        return AppUpdatesReport { entries };
+    };
+    let Ok(report) = serde_json::from_str::<serde_json::Value>(&out) else {
+        entries.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+        return AppUpdatesReport { entries };
+    };
+
+    for (kind, field) in [("formula", "formulae"), ("cask", "casks")] {
+        let Some(packages) = report.get(field).and_then(serde_json::Value::as_array) else {
+            continue;
+        };
+        for package in packages {
+            let Some(name) = package
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .filter(|name| safe_brew_name(name))
+            else {
+                continue;
+            };
+            let current_version = brew_version(package, "installed_version");
+            let available_version = brew_version(package, "current_version");
+            entries.push(available_update(
+                format!("brew:{kind}:{name}"),
+                name,
+                format!("brew-{kind}"),
+                current_version,
+                available_version,
+            ));
+        }
+    }
+    entries.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+    AppUpdatesReport { entries }
 }
 
 /// Batch uninstall. apt/snap go through pkexec; flatpak and AppImages don't.
@@ -840,10 +1049,63 @@ pub fn uninstall(ids: &[String]) -> AppActionReport {
     report
 }
 
-/// macOS: `.app` bundles have no in-place update mechanism, so this is a no-op.
+/// Update Homebrew formulae and casks only when their exact id is still present
+/// in a fresh `brew outdated --json=v2` report.  Manual `.app` bundles are
+/// rejected with an explicit explanation rather than pretending to update.
 #[cfg(target_os = "macos")]
-pub fn update(_ids: &[String]) -> AppActionReport {
-    AppActionReport::default()
+pub fn update(ids: &[String]) -> AppActionReport {
+    let mut action_report = AppActionReport::default();
+    let available: HashSet<String> = updates()
+        .entries
+        .into_iter()
+        .filter(|entry| entry.can_update)
+        .map(|entry| entry.id)
+        .collect();
+    let Some(brew) = brew_path() else {
+        action_report
+            .errors
+            .push("Homebrew is not installed in a supported location.".into());
+        return action_report;
+    };
+
+    for id in ids {
+        if id.starts_with("app:") {
+            action_report.errors.push(format!(
+                "{id}: manually installed .app bundles must be updated by their publisher."
+            ));
+            continue;
+        }
+        if !available.contains(id) {
+            action_report
+                .errors
+                .push(format!("refused (not currently upgradable): {id}"));
+            continue;
+        }
+        let Some((kind, name)) = id
+            .strip_prefix("brew:")
+            .and_then(|value| value.split_once(':'))
+        else {
+            action_report.errors.push(format!("refused (bad id): {id}"));
+            continue;
+        };
+        if !matches!(kind, "formula" | "cask") || !safe_brew_name(name) {
+            action_report.errors.push(format!("refused (bad id): {id}"));
+            continue;
+        }
+        let flag = if kind == "formula" {
+            "--formula"
+        } else {
+            "--cask"
+        };
+        let mut cmd = Command::new(brew);
+        cmd.args(["upgrade", flag, "--", name]);
+        exec(
+            &mut action_report,
+            &format!("brew upgrade {kind} {name}"),
+            cmd,
+        );
+    }
+    action_report
 }
 
 /// Batch update.
@@ -851,6 +1113,12 @@ pub fn update(_ids: &[String]) -> AppActionReport {
 pub fn update(ids: &[String]) -> AppActionReport {
     let mut report = AppActionReport::default();
     let known = validate_against_inventory(ids, &mut report, false);
+
+    for id in known.iter().filter(|id| id.starts_with("appimage:")) {
+        report.errors.push(format!(
+            "{id}: AppImages and unpacked application folders do not have a standard safe automatic update channel"
+        ));
+    }
 
     let apt: Vec<String> = split_ids(&known, "apt:")
         .into_iter()
@@ -887,92 +1155,202 @@ pub fn update(ids: &[String]) -> AppActionReport {
     report
 }
 
-// ---- Windows: winget update detection + batch upgrade ----------------------
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-/// Heuristically parse `winget upgrade` table output → the Name column of each
-/// upgradable row. Columns are padded with 2+ spaces, so the Name is everything
-/// before the first double-space run (Names may contain single spaces). Rows
-/// start after the dashed separator and end at the first blank line.
-#[cfg(target_os = "windows")]
-fn parse_winget_upgrade_names(out: &str) -> Vec<String> {
-    let mut names = Vec::new();
-    let mut in_table = false;
-    for line in out.lines() {
-        let line = line.trim_end();
-        if !in_table {
-            if line.starts_with("---") {
-                in_table = true;
-            }
-            continue;
-        }
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            break;
-        }
-        // Footer such as "N upgrades available." / pinned-package notes.
-        let starts_digit = trimmed.chars().next().is_some_and(|c| c.is_ascii_digit());
-        if starts_digit && trimmed.to_lowercase().contains("upgrade") {
-            continue;
-        }
-        if let Some(name) = line.split("  ").next() {
-            let name = name.trim();
-            if !name.is_empty() {
-                names.push(name.to_string());
-            }
-        }
+    #[test]
+    fn update_records_keep_the_action_id_and_capability_explicit() {
+        let automatic = available_update(
+            "apt:freeyourdisk",
+            "FreeYourDisk",
+            "apt",
+            Some("0.6.4".into()),
+            Some("0.6.5".into()),
+        );
+        assert!(automatic.can_update);
+        assert_eq!(automatic.id, "apt:freeyourdisk");
+        assert_eq!(automatic.available_version.as_deref(), Some("0.6.5"));
+        assert_eq!(automatic.reason, None);
+
+        let manual = non_automatic_update(
+            "appimage:/home/rony/Applications/FreeYourDisk.AppImage",
+            "FreeYourDisk",
+            "appimage",
+            None,
+            "No standard update channel.",
+        );
+        assert!(!manual.can_update);
+        assert_eq!(manual.provider, "appimage");
+        assert_eq!(
+            manual.reason.as_deref(),
+            Some("No standard update channel.")
+        );
     }
-    names
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_package_values_cannot_be_interpreted_as_flags() {
+        assert!(safe_value("org.example.App"));
+        assert!(!safe_value(""));
+        assert!(!safe_value("--assume-yes"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn homebrew_names_reject_flags_and_shell_syntax() {
+        assert!(safe_brew_name("homebrew/cask/firefox@esr"));
+        assert!(!safe_brew_name("--cask"));
+        assert!(!safe_brew_name("firefox;rm"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn winget_ids_reject_flags_and_shell_syntax() {
+        assert!(valid_winget_id("Microsoft.PowerToys"));
+        assert!(!valid_winget_id("--id"));
+        assert!(!valid_winget_id("Microsoft.PowerToys;cmd"));
+    }
 }
 
-/// Ids of apps winget reports as upgradable (for UI badging). Maps winget Names
-/// to inventory ids case-insensitively so the id-keyed frontend badging works
-/// unchanged. Unmatched winget Names are dropped.
+// ---- Windows: winget update detection + batch upgrade ----------------------
+
+/// A current winget upgrade candidate.  Only `PackageIdentifier` is used for
+/// the mutation; display names are intentionally never used as selectors.
 #[cfg(target_os = "windows")]
-pub fn updates() -> Vec<String> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct WingetUpgrade {
+    package_id: String,
+    name: String,
+    current_version: Option<String>,
+    available_version: Option<String>,
+}
+
+#[cfg(target_os = "windows")]
+fn json_field(
+    value: &serde_json::Map<String, serde_json::Value>,
+    names: &[&str],
+) -> Option<String> {
+    names.iter().find_map(|name| {
+        value
+            .get(*name)
+            .and_then(serde_json::Value::as_str)
+            .filter(|field| !field.trim().is_empty())
+            .map(str::to_owned)
+    })
+}
+
+/// Walk the documented JSON output instead of parsing a locale-dependent table.
+/// Different winget releases wrap package rows under source objects, hence the
+/// recursive traversal.  A row is accepted only with an exact package id and an
+/// advertised target version.
+#[cfg(target_os = "windows")]
+fn collect_winget_upgrades(value: &serde_json::Value, out: &mut Vec<WingetUpgrade>) {
+    match value {
+        serde_json::Value::Array(values) => {
+            for value in values {
+                collect_winget_upgrades(value, out);
+            }
+        }
+        serde_json::Value::Object(object) => {
+            let package_id = json_field(object, &["PackageIdentifier", "PackageId", "Id"]);
+            let available_version = json_field(object, &["AvailableVersion", "Available"]);
+            if let (Some(package_id), Some(available_version)) = (package_id, available_version) {
+                if valid_winget_id(&package_id) {
+                    let name = json_field(object, &["PackageName", "Name"])
+                        .unwrap_or_else(|| package_id.clone());
+                    out.push(WingetUpgrade {
+                        package_id,
+                        name,
+                        current_version: json_field(object, &["InstalledVersion", "Version"]),
+                        available_version: Some(available_version),
+                    });
+                }
+            }
+            for child in object.values() {
+                collect_winget_upgrades(child, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Winget package identifiers are command arguments, never shell fragments.
+#[cfg(target_os = "windows")]
+fn valid_winget_id(package_id: &str) -> bool {
+    !package_id.is_empty()
+        && !package_id.starts_with('-')
+        && package_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '+'))
+}
+
+#[cfg(target_os = "windows")]
+fn winget_upgrades() -> Vec<WingetUpgrade> {
     let Some(out) = run(
         "winget",
         &[
             "upgrade",
             "--accept-source-agreements",
             "--disable-interactivity",
+            "--output",
+            "json",
         ],
     ) else {
         return Vec::new();
     };
-    let names = parse_winget_upgrade_names(&out);
-    if names.is_empty() {
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) else {
         return Vec::new();
-    }
-    let lower: HashSet<String> = names.iter().map(|n| n.to_lowercase()).collect();
-    list()
-        .into_iter()
-        .filter(|app| lower.contains(&app.name.to_lowercase()))
-        .map(|app| app.id)
-        .collect()
+    };
+    let mut upgrades = Vec::new();
+    collect_winget_upgrades(&json, &mut upgrades);
+    upgrades.sort_by(|left, right| left.package_id.cmp(&right.package_id));
+    upgrades.dedup_by(|left, right| left.package_id == right.package_id);
+    upgrades
 }
 
-/// Best-effort batch update via winget. Each id is resolved to its inventory
-/// AppEntry name and updated by `winget upgrade --silent --name <name>`. winget
-/// keys on its own package identity, so an entry whose name does not match a
-/// winget package (or matches several) cannot be updated — that is reported as an
-/// explicit error, never silently skipped.
+/// Exact winget ids, versions, and names from the current package-manager
+/// response.  This deliberately does not guess a link to a registry/MSIX
+/// record: display-name matching can target the wrong application.
+#[cfg(target_os = "windows")]
+pub fn updates() -> AppUpdatesReport {
+    AppUpdatesReport {
+        entries: winget_upgrades()
+            .into_iter()
+            .map(|upgrade| {
+                available_update(
+                    format!("winget:{}", upgrade.package_id),
+                    upgrade.name,
+                    "winget",
+                    upgrade.current_version,
+                    upgrade.available_version,
+                )
+            })
+            .collect(),
+    }
+}
+
+/// Batch update via winget using an exact package identifier freshly obtained
+/// from winget.  Registry and MSIX inventory ids cannot be used here because
+/// neither is a reliable winget identity.
 #[cfg(target_os = "windows")]
 pub fn update(ids: &[String]) -> AppActionReport {
     let mut report = AppActionReport::default();
-    let known = validate_against_inventory(ids, &mut report, false);
-    if known.is_empty() {
-        return report;
-    }
-    // One extra inventory scan to map ids → names (on-demand action; acceptable).
-    let inventory = list();
-    for id in &known {
-        let Some(app) = inventory.iter().find(|a| &a.id == id) else {
-            report.errors.push(format!("{id}: not found in inventory"));
+    let available: HashSet<String> = winget_upgrades()
+        .into_iter()
+        .map(|upgrade| upgrade.package_id)
+        .collect();
+    for id in ids {
+        let Some(package_id) = id.strip_prefix("winget:") else {
+            report.errors.push(format!(
+                "{id}: this application has no verified winget update identifier"
+            ));
             continue;
         };
-        // Anti argument-injection: a name starting with '-' would read as a flag.
-        if app.name.trim().is_empty() || app.name.starts_with('-') {
-            report.errors.push(format!("{id}: unsafe package name"));
+        if !valid_winget_id(package_id) || !available.contains(package_id) {
+            report
+                .errors
+                .push(format!("refused (not currently upgradable): {id}"));
             continue;
         }
         let mut cmd = Command::new("winget");
@@ -982,10 +1360,11 @@ pub fn update(ids: &[String]) -> AppActionReport {
             "--accept-source-agreements",
             "--accept-package-agreements",
             "--disable-interactivity",
-            "--name",
-            &app.name,
+            "--id",
+            package_id,
+            "--exact",
         ]);
-        exec(&mut report, &format!("winget upgrade {}", app.name), cmd);
+        exec(&mut report, &format!("winget upgrade {package_id}"), cmd);
     }
     report
 }

@@ -134,6 +134,42 @@ export interface AppActionReport {
   errors: string[];
 }
 
+/** Linux package managers and standalone application formats. */
+export type LinuxAppUpdateProvider = "apt" | "flatpak" | "snap" | "appimage";
+
+/** Windows packages resolved through their exact winget identifier. */
+export type WindowsAppUpdateProvider = "winget";
+
+/** Homebrew distinguishes formulae from graphical casks for update actions. */
+export type HomebrewAppUpdateProvider = "brew-formula" | "brew-cask";
+
+/** A macOS .app copied outside a managed package channel. */
+export type ManualAppUpdateProvider = "manual-app";
+
+export type AppUpdateProvider =
+  | LinuxAppUpdateProvider
+  | WindowsAppUpdateProvider
+  | HomebrewAppUpdateProvider
+  | ManualAppUpdateProvider;
+
+/** A backend-supplied explanation when an update cannot be run safely. */
+export type AppUpdateReason = string;
+
+export interface AppUpdate {
+  /** Stable package-manager action identifier; never substitute the display name. */
+  id: string;
+  name: string;
+  provider: AppUpdateProvider;
+  current_version: string | null;
+  available_version: string | null;
+  can_update: boolean;
+  reason: AppUpdateReason | null;
+}
+
+export interface AppUpdatesReport {
+  entries: AppUpdate[];
+}
+
 export type ThemePref = "system" | "light" | "dark";
 export type LangPref = "system" | "fr" | "en";
 
@@ -201,7 +237,7 @@ export const api = {
   homeTotal: () => invoke<number>("home_total"),
   systemTotal: () => invoke<number>("system_total"),
   listApplications: () => invoke<AppEntry[]>("list_applications"),
-  appUpdates: () => invoke<string[]>("app_updates"),
+  appUpdates: () => invoke<AppUpdatesReport>("app_updates"),
   uninstallApps: (ids: string[]) =>
     invoke<AppActionReport>("uninstall_apps", { ids }),
   updateApps: (ids: string[]) =>

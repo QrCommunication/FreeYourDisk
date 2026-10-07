@@ -389,7 +389,7 @@ pub fn winget_install_smart() -> InstallReport {
 #[allow(dead_code)] // used only by the Windows elevated executors
 fn elevation_token() -> String {
     let mut buf = [0u8; 8];
-    match getrandom::getrandom(&mut buf) {
+    match getrandom::fill(&mut buf) {
         Ok(()) => format!("{:020}", u64::from_le_bytes(buf)),
         Err(_) => std::process::id().to_string(),
     }
@@ -467,5 +467,12 @@ mod tests {
         assert_eq!(report.deleted_count, 0);
         assert!(victim.exists(), "a file outside home must never be deleted");
         assert_eq!(report.errors.len(), 1);
+    }
+
+    #[test]
+    fn elevation_token_is_decimal_and_fixed_width() {
+        let token = elevation_token();
+        assert_eq!(token.len(), 20);
+        assert!(token.bytes().all(|byte| byte.is_ascii_digit()));
     }
 }

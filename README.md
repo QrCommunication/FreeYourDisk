@@ -4,7 +4,7 @@
 
 **English** · [Français](README.fr.md)
 
-A modern **Linux and Windows** desktop utility that scans your disk and
+A modern **Linux, Windows and macOS** desktop utility that scans your disk and
 **safely** reclaims space: temporary files, oversized files, stale git
 worktrees, developer caches, **installed applications** and a **file-type
 breakdown** — around a 3D usage donut, with a recoverable-by-default deletion
@@ -53,11 +53,14 @@ inflating "system".
 
 ### Applications
 
-Inventory of installed apps from **apt**, **flatpak**, **snap** and
-**AppImages**, ranked by disk space, with available updates surfaced on open and
-a filter to show only updatable apps. **Batch uninstall** or **batch update** the
-selection; essential system packages are **protected** (update-only, uninstall
-blocked). App folders are excluded from the other scans.
+Inventory of installed apps from Linux package managers and AppImages, Windows
+registry/MSIX entries, and macOS `.app` bundles, ranked by disk space. Available
+updates are surfaced with their provider and versions: **apt**, **flatpak**,
+**snap**, exact-id **winget**, and Homebrew formulas/casks support batch update.
+AppImages and manually copied `.app` bundles remain visible with an explicit
+reason, but have no deceptive update action because they lack a standard safe
+update channel. Essential system packages are **protected** (update-only,
+uninstall blocked). App folders are excluded from the other scans.
 
 ### Disk health
 
@@ -93,8 +96,10 @@ memory pressure.
 
 ### System tray
 
-The app lives in the tray; its menu opens a popover widget with a disk-usage
-summary and a quick action. Closing the window keeps it running in the tray.
+When the desktop exposes a compatible system tray, its menu opens a popover
+widget with a disk-usage summary and a quick action. If the tray is unavailable
+(for example on some Linux desktop sessions), FreeYourDisk still starts and
+closing the main window closes it normally rather than hiding it indefinitely.
 
 ## Safety model
 
@@ -111,10 +116,11 @@ FreeYourDisk is built around five non-negotiable invariants:
 
 ### Least privilege
 
-The UI runs as a normal user with **no privileges**. When an action needs root
-(e.g. `/var/tmp`, reading NVMe SMART, removing an apt/snap package), a **minimal
-helper** is invoked via **Polkit / pkexec** — the WebView itself never runs as
-root.
+The UI runs as a normal user with **no privileges**. When an action needs
+elevation (e.g. `/var/tmp`, SMART, or managed packages), a **minimal helper**
+is invoked by the platform mechanism: Polkit / `pkexec` on Linux, UAC on
+Windows, and the native administrator dialog on macOS. The WebView itself never
+runs as root or administrator.
 
 ## Tech stack
 
@@ -185,6 +191,26 @@ systemd user timer.
 pnpm --dir ui install && pnpm --dir ui build
 cargo tauri build --bundles nsis       # produces the NSIS installer
 ```
+
+### Release artifacts planned for v0.6.5
+
+The tag pipeline is configured to build the following artifacts after its
+platform checks and signing steps succeed. This describes the expected release
+output; it does **not** claim that `v0.6.5` has already been published.
+
+| Platform | Artifact | Notes |
+| --- | --- | --- |
+| Linux | `.deb` | Debian/Ubuntu package. |
+| Linux | `.rpm` | RPM-based distribution package. |
+| Linux | `.AppImage` | Portable application image; package-manager/root helper integration may be unavailable outside native packages. |
+| Windows | NSIS `*.exe` | Windows installer. |
+| macOS Apple Silicon | `*_aarch64.dmg` | Signed and notarized CI artifact. |
+| macOS Intel | `*_x86_64.dmg` | Signed and notarized CI artifact. |
+
+For the macOS build, signing and notarization run in the GitHub `production`
+environment after the privileged helper has been embedded and signed. See
+[the macOS build guide](docs/BUILD_MACOS.md) for the two native architectures
+and the required release secrets.
 
 ## Project layout
 

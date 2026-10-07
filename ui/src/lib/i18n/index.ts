@@ -7,7 +7,25 @@ import fr from "./fr.json";
 addMessages("en", en);
 addMessages("fr", fr);
 
+type SupportedLocale = "en" | "fr";
+
+/**
+ * Maps an operating-system locale to one of the dictionaries bundled with the
+ * application. Desktop environments commonly report values such as `fr-FR`
+ * or `fr_FR.UTF-8`, while svelte-i18n only has the short `fr` and `en` keys.
+ */
+function resolveInitialLocale(
+  locale: string | null | undefined,
+): SupportedLocale {
+  const language = locale
+    ?.trim()
+    .toLowerCase()
+    .split(/[-_.@]/, 1)[0];
+
+  return language === "fr" ? "fr" : "en";
+}
+
 init({
   fallbackLocale: "en",
-  initialLocale: getLocaleFromNavigator(),
+  initialLocale: resolveInitialLocale(getLocaleFromNavigator()),
 });

@@ -2,30 +2,60 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    tags: ["v*"]
+
+# Build jobs have read-only permissions; only `publish` can create or edit a
+# GitHub release. A retry of the same tag must wait, never cancel promotion.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  bundle:
-    name: Build Linux bundles
+  verify-version:
+    name: Verify tagged version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: version
+        name: Verify tag and package versions agree
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          CARGO_VERSION="$(awk -F'"' '/^version = / { print $2; exit }' Cargo.toml)"
+          UI_VERSION="$(node -p "require('./ui/package.json').version")"
+
+          test -n "$TAG_VERSION"
+          test "$TAG_VERSION" = "$CARGO_VERSION"
+          test "$TAG_VERSION" = "$UI_VERSION"
+          echo "value=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+
+  linux:
+    name: Build Linux packages
+    needs: verify-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
       - name: Install system dependencies
+        shell: bash
         run: |
+          set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
             libayatana-appindicator3-dev libxdo-dev cmake build-essential file
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: "22"
       - uses: pnpm/action-setup@v6
         with:
           version: 10
@@ -42,14 +72,251 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked
 
-      - name: Build bundles (deb, rpm, appimage)
-        run: cargo tauri build
+      - name: Build deb, rpm and AppImage
+        run: cargo tauri build --bundles deb,rpm,appimage
 
-      - name: Publish release
-        uses: softprops/action-gh-release@v3
+      - name: Upload Linux release assets
+        uses: actions/upload-artifact@v7
         with:
-          files: |
+          name: release-linux
+          path: |
             target/release/bundle/deb/*.deb
             target/release/bundle/rpm/*.rpm
             target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+
+  windows:
+    name: Build Windows installer
+    needs: verify-version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Build frontend
+        working-directory: ui
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked
+
+      - name: Build NSIS installer
+        run: cargo tauri build --bundles nsis
+
+      - name: Upload Windows release asset
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-windows
+          path: target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+  macos:
+    name: Build macOS ${{ matrix.arch }} DMG
+    needs: verify-version
+    environment: production
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64
+            runner: macos-14
+          - arch: x86_64
+            runner: macos-13
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Build frontend
+        working-directory: ui
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Build privileged helper
+        run: cargo build --release -p freeyourdisk-helper
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked
+
+      - name: Build native app bundle
+        run: cargo tauri build --bundles app
+
+      - name: Import Developer ID certificate
+        id: signing
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          CERT_PATH="$RUNNER_TEMP/freeyourdisk-certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/freeyourdisk-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+
+          cleanup() {
+            rm -f "$CERT_PATH"
+          }
+          trap cleanup EXIT
+
+          printf '%s' "$APPLE_CERTIFICATE" | base64 -D > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/xcrun
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | sed -n 's/.*"\(Developer ID Application:.*\)".*/\1/p')"
+          test -n "$IDENTITY"
+          test "$(printf '%s\n' "$IDENTITY" | wc -l | tr -d ' ')" -eq 1
+
+          {
+            echo "keychain_path=$KEYCHAIN_PATH"
+            echo "identity=$IDENTITY"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Embed helper and sign app bundle
+        id: app
+        shell: bash
+        env:
+          IDENTITY: ${{ steps.signing.outputs.identity }}
+        run: |
+          set -euo pipefail
+          BUNDLE_DIR="target/release/bundle/macos"
+          APP_COUNT="$(find "$BUNDLE_DIR" -maxdepth 1 -type d -name '*.app' -print | wc -l | tr -d ' ')"
+          test "$APP_COUNT" -eq 1
+          APP="$(find "$BUNDLE_DIR" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          HELPER="target/release/freeyourdisk-helper"
+          DESTINATION="$APP/Contents/Resources/freeyourdisk-helper"
+
+          test -x "$HELPER"
+          cp "$HELPER" "$DESTINATION"
+          chmod 0755 "$DESTINATION"
+
+          # Nested code must be signed before its containing app bundle.
+          codesign --force --options runtime --timestamp --sign "$IDENTITY" "$DESTINATION"
+          codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          echo "app_path=$APP" >> "$GITHUB_OUTPUT"
+
+      - name: Create, sign, notarize and staple DMG
+        id: dmg
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.verify-version.outputs.version }}
+          APP_PATH: ${{ steps.app.outputs.app_path }}
+          IDENTITY: ${{ steps.signing.outputs.identity }}
+          KEYCHAIN_PATH: ${{ steps.signing.outputs.keychain_path }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$APPLE_TEAM_ID"
+          DMG="FreeYourDisk_${VERSION}_${ARCH}.dmg"
+          PROFILE="freeyourdisk-notary-${ARCH}"
+
+          hdiutil create -volname "FreeYourDisk" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG"
+          codesign --force --timestamp --sign "$IDENTITY" "$DMG"
+          xcrun notarytool store-credentials "$PROFILE" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --keychain "$KEYCHAIN_PATH"
+          xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          spctl -a -vvv -t open "$DMG"
+          echo "path=$DMG" >> "$GITHUB_OUTPUT"
+
+      - name: Verify stapled distribution artifact
+        shell: bash
+        env:
+          DMG_PATH: ${{ steps.dmg.outputs.path }}
+        run: |
+          set -euo pipefail
+          MOUNT_POINT="$(mktemp -d "$RUNNER_TEMP/freeyourdisk-mount.XXXXXX")"
+          cleanup() {
+            hdiutil detach "$MOUNT_POINT" -quiet || true
+            rmdir "$MOUNT_POINT" || true
+          }
+          trap cleanup EXIT
+
+          hdiutil attach "$DMG_PATH" -readonly -nobrowse -mountpoint "$MOUNT_POINT"
+          APP_COUNT="$(find "$MOUNT_POINT" -maxdepth 1 -type d -name '*.app' -print | wc -l | tr -d ' ')"
+          test "$APP_COUNT" -eq 1
+          APP="$(find "$MOUNT_POINT" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Upload macOS release asset
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-macos-${{ matrix.arch }}
+          path: ${{ steps.dmg.outputs.path }}
+          if-no-files-found: error
+
+      - name: Remove temporary signing keychain
+        if: always()
+        shell: bash
+        env:
+          KEYCHAIN_PATH: ${{ steps.signing.outputs.keychain_path }}
+        run: |
+          set -euo pipefail
+          if [ -n "${KEYCHAIN_PATH:-}" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+
+  publish:
+    name: Publish GitHub release
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all verified release assets
+        uses: actions/download-artifact@v7
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Verify expected asset formats
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find release-assets -type f -name '*.deb' | wc -l | tr -d ' ')" -ge 1
+          test "$(find release-assets -type f -name '*.rpm' | wc -l | tr -d ' ')" -ge 1
+          test "$(find release-assets -type f -name '*.AppImage' | wc -l | tr -d ' ')" -ge 1
+          test "$(find release-assets -type f -name '*.exe' | wc -l | tr -d ' ')" -ge 1
+          test "$(find release-assets -type f -name '*_aarch64.dmg' | wc -l | tr -d ' ')" -eq 1
+          test "$(find release-assets -type f -name '*_x86_64.dmg' | wc -l | tr -d ' ')" -eq 1
+
+      - name: Create release and attach every platform asset
+        uses: softprops/action-gh-release@v3
+        with:
           generate_release_notes: true
+          files: release-assets/**/*

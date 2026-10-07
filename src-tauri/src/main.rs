@@ -23,6 +23,10 @@ mod toast;
 mod tray;
 
 use state::AppState;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use tauri::WindowEvent;
 
 fn main() {
@@ -56,20 +60,36 @@ fn main() {
     // Stay alive and responsive under memory pressure (best effort).
     taskmgr::raise_priority();
 
+    // A tray is optional on Linux: some desktop environments do not expose a
+    // StatusNotifier/AppIndicator host. Keep this state for the close handler
+    // so the main window is never hidden without a way to restore it.
+    let tray_available = Arc::new(AtomicBool::new(false));
+    let tray_available_at_setup = Arc::clone(&tray_available);
+    let tray_available_at_close = Arc::clone(&tray_available);
+
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(AppState::new())
-        .setup(|app| {
+        .setup(move |app| {
             core_scan::cache::load(&settings::config_dir().join("dir-cache.json"));
-            tray::setup(app)?;
+            match tray::setup(app) {
+                Ok(()) => tray_available_at_setup.store(true, Ordering::Release),
+                Err(error) => {
+                    eprintln!(
+                        "FreeYourDisk: system tray unavailable; continuing without tray support: {error}"
+                    );
+                }
+            }
             monitor::start(app.handle().clone());
             // Register the user's summon hotkey for the task manager.
             shortcut::register(app.handle(), &settings::load().shortcut);
             Ok(())
         })
-        .on_window_event(|window, event| match event {
+        .on_window_event(move |window, event| match event {
             // Closing the main window hides it to the tray instead of quitting.
-            WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
+            WindowEvent::CloseRequested { api, .. }
+                if window.label() == "main" && tray_available_at_close.load(Ordering::Acquire) =>
+            {
                 let _ = window.hide();
                 api.prevent_close();
             }
