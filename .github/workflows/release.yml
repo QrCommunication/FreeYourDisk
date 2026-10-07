@@ -75,6 +75,39 @@ jobs:
       - name: Build deb, rpm and AppImage
         run: cargo tauri build --bundles deb,rpm,appimage
 
+      - name: Verify packaged AppImage application and helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          APPIMAGES=("$GITHUB_WORKSPACE"/target/release/bundle/appimage/*.AppImage)
+          test "${#APPIMAGES[@]}" -eq 1
+          APPIMAGE="${APPIMAGES[0]}"
+          test -f "$APPIMAGE"
+          chmod u+x "$APPIMAGE"
+
+          EXTRACTION_DIR="$(mktemp -d "$RUNNER_TEMP/freeyourdisk-appimage.XXXXXX")"
+          cd "$EXTRACTION_DIR"
+          "$APPIMAGE" --appimage-extract > /dev/null
+
+          test -x squashfs-root/usr/bin/freeyourdisk
+          test -x squashfs-root/usr/bin/freeyourdisk-helper
+          # linuxdeploy can adjust RPATH; compare code/data rather than ELF metadata.
+          for SECTION in .text .rodata; do
+            objcopy --dump-section "$SECTION=built$SECTION" \
+              "$GITHUB_WORKSPACE/target/release/freeyourdisk-helper" /dev/null
+            objcopy --dump-section "$SECTION=packaged$SECTION" \
+              squashfs-root/usr/bin/freeyourdisk-helper /dev/null
+            test -s "built$SECTION"
+            test -s "packaged$SECTION"
+            cmp -s "built$SECTION" "packaged$SECTION"
+          done
+
+          REPORT="$(printf '%s\n' \
+            '{"items":[],"destination":"trash","total_bytes":0,"requires_root":false}' \
+            | squashfs-root/usr/bin/freeyourdisk-helper)"
+          test "$REPORT" = '{"freed_bytes":0,"deleted_count":0,"errors":[]}'
+
       - name: Upload Linux release assets
         uses: actions/upload-artifact@v7
         with:

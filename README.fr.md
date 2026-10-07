@@ -197,10 +197,16 @@ publiée.
 | --- | --- | --- |
 | Linux | `.deb` | Paquet Debian/Ubuntu. |
 | Linux | `.rpm` | Paquet pour distributions RPM. |
-| Linux | `.AppImage` | Image portable ; les intégrations de gestionnaire de paquets ou helper root peuvent être absentes hors paquets natifs. |
+| Linux | `.AppImage` | Image portable avec l'application et le helper privilégié embarqués. |
 | Windows | NSIS `*.exe` | Installateur Windows. |
 | macOS Apple Silicon | `*_aarch64.dmg` | Artefact CI signé et notarisé. |
 | macOS Intel | `*_x86_64.dmg` | Artefact CI signé et notarisé. |
+
+Les fonctions privilégiées de l'AppImage nécessitent `pkexec` et un agent
+d'authentification Polkit sur le système hôte. Les fonctions SMART et de gestion
+des applications dépendent aussi des outils SMART et des gestionnaires de
+paquets disponibles sur l'hôte. L'AppImage n'installe automatiquement ni
+politique Polkit ni timer systemd.
 
 La signature et la notarisation macOS passent par l'environnement GitHub
 `production`, après l'intégration et la signature du helper privilégié. Le

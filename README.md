@@ -216,10 +216,16 @@ output; it does **not** claim that `v0.6.5` has already been published.
 | --- | --- | --- |
 | Linux | `.deb` | Debian/Ubuntu package. |
 | Linux | `.rpm` | RPM-based distribution package. |
-| Linux | `.AppImage` | Portable application image; package-manager/root helper integration may be unavailable outside native packages. |
+| Linux | `.AppImage` | Portable application image with the privileged helper included. |
 | Windows | NSIS `*.exe` | Windows installer. |
 | macOS Apple Silicon | `*_aarch64.dmg` | Signed and notarized CI artifact. |
 | macOS Intel | `*_x86_64.dmg` | Signed and notarized CI artifact. |
+
+The AppImage requires `pkexec` and a running Polkit authentication agent on the
+host for privileged actions. SMART features and application updates depend on
+the host's installed SMART tools and package managers. Unlike the DEB/RPM
+packages, the AppImage does not install a system-wide Polkit policy or a
+systemd cleanup timer.
 
 For the macOS build, signing and notarization run in the GitHub `production`
 environment after the privileged helper has been embedded and signed. See

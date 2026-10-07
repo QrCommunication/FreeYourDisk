@@ -52,6 +52,11 @@
     "shortDescription": "Safe disk cleanup utility",
     "longDescription": "Safely clean temporary files, large files, git worktrees and dev caches.",
     "linux": {
+      "appimage": {
+        "files": {
+          "/usr/bin/freeyourdisk-helper": "../target/release/freeyourdisk-helper"
+        }
+      },
       "deb": {
         "depends": [
           "libc6",
