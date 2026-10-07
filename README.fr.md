@@ -186,12 +186,14 @@ cargo tauri build          # produit les bundles deb, rpm et AppImage
 
 Le binaire autonome est dans `target/release/freeyourdisk`.
 
-### Artefacts prévus par la pipeline v0.6.5
+### Release v0.6.5 publiée
 
-Après succès des contrôles de plateforme et des étapes de signature, la pipeline
-de tag est configurée pour produire les formats suivants. Cette liste décrit la
-sortie attendue de **v0.6.5** ; elle ne signifie pas que cette release est déjà
-publiée.
+La [release v0.6.5](https://github.com/QrCommunication/FreeYourDisk/releases/tag/v0.6.5)
+est publiée avec les six fichiers suivants, après réussite de la pipeline de
+release. Leur téléchargement public et leurs empreintes SHA-256 ont été
+vérifiés. Les DMG macOS ont passé les contrôles de signature, de notarisation
+et Gatekeeper en CI ; cela ne remplace pas un test manuel de l'interface sur
+macOS ou Windows.
 
 | Plateforme | Artefact | Précision |
 | --- | --- | --- |

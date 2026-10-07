@@ -206,11 +206,12 @@ pnpm --dir ui install && pnpm --dir ui build
 cargo tauri build --bundles nsis       # produces the NSIS installer
 ```
 
-### Release artifacts planned for v0.6.5
+### Release artifacts — v0.6.5
 
-The tag pipeline is configured to build the following artifacts after its
-platform checks and signing steps succeed. This describes the expected release
-output; it does **not** claim that `v0.6.5` has already been published.
+[Release v0.6.5](https://github.com/QrCommunication/FreeYourDisk/releases/tag/v0.6.5)
+was published on 7 October 2026 after the release pipeline passed. All six
+artifacts below are available. Each public download was verified to return
+HTTP 200 with a SHA-256 hash matching its published GitHub asset metadata.
 
 | Platform | Artifact | Notes |
 | --- | --- | --- |
