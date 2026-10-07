@@ -199,7 +199,8 @@ jobs:
           }
           trap cleanup EXIT
 
-          printf '%s' "$APPLE_CERTIFICATE" | base64 -D > "$CERT_PATH"
+          export APPLE_CERTIFICATE_PASSWORD="$(printf '%s' "$APPLE_CERTIFICATE_PASSWORD" | tr -d '\r\n')"
+          bash packaging/macOS/prepare-signing-certificate.sh "$CERT_PATH"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"

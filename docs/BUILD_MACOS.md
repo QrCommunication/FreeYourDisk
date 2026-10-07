@@ -28,6 +28,30 @@ secrets `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID` et
 les logs. L'absence d'un de ces éléments doit faire échouer la release, jamais
 produire un DMG présenté comme signé.
 
+### Compatibilité PKCS#12 avec le trousseau Apple
+
+Avant `security import`, les deux workflows exécutent
+`packaging/macOS/prepare-signing-certificate.sh`. Le script valide le secret
+PKCS#12 avec OpenSSL 3, puis réexporte le même certificat et sa clé avec
+`PBE-SHA1-3DES` pour le chiffrement de la clé et du certificat, et `sha1` pour
+le MAC. Cela évite le refus `MAC verification failed during PKCS12 import`
+du trousseau Apple avec certains exports utilisant les valeurs par défaut
+modernes d'OpenSSL 3. Les caractères CR/LF de fin de mot de passe sont retirés
+dans le script et dans l'étape d'import.
+
+Cette conversion ne renouvelle pas le certificat et ne modifie pas les secrets
+GitHub. Le PEM intermédiaire reste chiffré, les fichiers temporaires ont des
+permissions privées et sont supprimés à la sortie. Les mots de passe passent
+à OpenSSL par l'environnement, jamais par les logs. Sur macOS, OpenSSL provient
+de Homebrew `openssl@3`; `OPENSSL_BIN` permet un chemin explicite pour un test.
+
+Le test utilise uniquement un certificat jetable et vérifie les algorithmes,
+l'empreinte du certificat conservée et le refus d'un mauvais mot de passe :
+
+```bash
+bash packaging/macOS/test-prepare-signing-certificate.sh
+```
+
 ## Build local de diagnostic
 
 Le build local doit être fait **sur un Mac** (Xcode, `codesign` et `notarytool`
