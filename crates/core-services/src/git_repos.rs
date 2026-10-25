@@ -12,14 +12,33 @@ use git2::{Repository, StatusOptions};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const SKIP_DESCENT: &[&str] = &[
-    "node_modules",
-    "target",
-    ".next",
-    ".turbo",
-    "vendor",
-    ".venv",
-];
+/// Directories to skip during recursive descent. Platform-specific entries are
+/// appended at runtime via `skip_descent()` because `#[cfg]` attributes are not
+/// valid inside array literals.
+const COMMON_SKIP: &[&str] = &["node_modules", "target", ".next", ".turbo", "vendor", ".venv"];
+
+fn should_skip_dir(name: &str) -> bool {
+    if COMMON_SKIP.contains(&name) {
+        return true;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // Windows-specific directories that are massive and never contain user repos.
+        // Without these, scanning %USERPROFILE% traverses AppData for hours.
+        const WINDOWS_SKIP: &[&str] = &["AppData", "MicrosoftEdgeBackups", "NTUSER.DAT"];
+        if WINDOWS_SKIP.contains(&name) {
+            return true;
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // macOS-specific: Library contains app caches, not user repos.
+        if name == "Library" {
+            return true;
+        }
+    }
+    false
+}
 
 /// Finds git repos under `search_root` and surfaces removable worktrees.
 #[derive(Clone, Debug)]
@@ -56,7 +75,7 @@ fn find_repos(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
         let skip = path
             .file_name()
             .and_then(|n| n.to_str())
-            .map(|n| SKIP_DESCENT.contains(&n))
+            .map(should_skip_dir)
             .unwrap_or(false);
         if !skip {
             find_repos(&path, depth - 1, out);
