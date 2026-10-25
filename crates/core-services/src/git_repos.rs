@@ -15,7 +15,14 @@ use std::path::{Path, PathBuf};
 /// Directories to skip during recursive descent. Platform-specific entries are
 /// appended at runtime via `skip_descent()` because `#[cfg]` attributes are not
 /// valid inside array literals.
-const COMMON_SKIP: &[&str] = &["node_modules", "target", ".next", ".turbo", "vendor", ".venv"];
+const COMMON_SKIP: &[&str] = &[
+    "node_modules",
+    "target",
+    ".next",
+    ".turbo",
+    "vendor",
+    ".venv",
+];
 
 fn should_skip_dir(name: &str) -> bool {
     if COMMON_SKIP.contains(&name) {
