@@ -28,6 +28,25 @@ fn should_skip_dir(name: &str) -> bool {
     if COMMON_SKIP.contains(&name) {
         return true;
     }
+    #[cfg(target_os = "linux")]
+    {
+        // Linux-specific: these directories under /home or / are massive system/cache
+        // trees that never contain user git repos and cause multi-hour scans.
+        const LINUX_SKIP: &[&str] = &[
+            ".cache",
+            ".local/share/Trash",
+            ".steam",
+            ".wine",
+            ".var/app", // Flatpak per-app data
+            ".mozilla",
+            ".thunderbird",
+            "snap", // Snap package data
+            ".snapshots",
+        ];
+        if LINUX_SKIP.contains(&name) {
+            return true;
+        }
+    }
     #[cfg(target_os = "windows")]
     {
         // Windows-specific directories that are massive and never contain user repos.
@@ -91,19 +110,37 @@ fn find_repos(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
 }
 
 /// True if the worktree at `path` has a clean status (no changes, no untracked).
+/// Spawns a background thread with a 5-second timeout to prevent indefinite hangs
+/// on repositories with massive index or slow filesystems (common on Linux with
+/// network mounts, FUSE, or very large monorepos). The spawned thread is detached
+/// on timeout (Rust cannot forcibly kill a thread); it will finish on its own and
+/// drop its resources.
 fn is_worktree_clean(path: &Path) -> bool {
-    let Ok(repo) = Repository::open(path) else {
-        return false;
-    };
-    let mut opts = StatusOptions::new();
-    opts.include_untracked(true);
-    // Bind before the block ends so the borrowing `Statuses` temporary drops
-    // before `repo`.
-    let clean = match repo.statuses(Some(&mut opts)) {
-        Ok(statuses) => statuses.is_empty(),
-        Err(_) => false, // cannot determine → treat as unsafe
-    };
-    clean
+    let path_buf = path.to_path_buf();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let result = (|| {
+            let Ok(repo) = Repository::open(&path_buf) else {
+                return false;
+            };
+            let mut opts = StatusOptions::new();
+            opts.include_untracked(true);
+            // Bind to a local so the `Statuses` borrow is released before `repo`
+            // is dropped at the end of this closure (E0597).
+            let clean = match repo.statuses(Some(&mut opts)) {
+                Ok(statuses) => statuses.is_empty(),
+                Err(_) => false,
+            };
+            clean
+        })();
+        // Ignore send error: receiver may have been dropped on timeout.
+        let _ = tx.send(result);
+    });
+    // Wait up to 5 seconds; if the thread hasn't finished, treat as unsafe.
+    match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+        Ok(result) => result,
+        Err(_) => false, // timeout or channel closed → treat as unsafe
+    }
 }
 
 /// Removable worktree items for a single repository.
