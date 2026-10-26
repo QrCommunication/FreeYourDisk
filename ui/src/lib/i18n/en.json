@@ -211,6 +211,14 @@
   },
   "tray": {
     "occupied": "Space used",
+    "used": "Used",
+    "free_label": "free",
+    "reclaimable": "reclaimable",
+    "quick_clean": "Quick clean",
+    "apps_title": "Applications",
+    "updates_available": "{count} update(s)",
+    "apps_up_to_date": "All apps up to date",
+    "git_hint": "Scan worktrees",
     "open": "Open FreeYourDisk",
     "clean": "Clean"
   },

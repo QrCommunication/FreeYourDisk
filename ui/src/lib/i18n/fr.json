@@ -211,6 +211,14 @@
   },
   "tray": {
     "occupied": "Espace occupé",
+    "used": "Utilisé",
+    "free_label": "libre",
+    "reclaimable": "récupérable",
+    "quick_clean": "Nettoyage rapide",
+    "apps_title": "Applications",
+    "updates_available": "{count} mise(s) à jour",
+    "apps_up_to_date": "Applications à jour",
+    "git_hint": "Scanner les worktrees",
     "open": "Ouvrir FreeYourDisk",
     "clean": "Nettoyer"
   },

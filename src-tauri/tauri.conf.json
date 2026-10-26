@@ -21,7 +21,7 @@
         "label": "tray",
         "url": "index.html",
         "width": 320,
-        "height": 470,
+        "height": 520,
         "decorations": false,
         "resizable": false,
         "alwaysOnTop": true,
