@@ -24,8 +24,28 @@ impl Config {
         // `dirs::home_dir()` resolves $HOME on unix and %USERPROFILE% on Windows.
         let home = dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from(if cfg!(windows) { "C:\\" } else { "/" }));
+
+        // On Linux, scanning $HOME directly causes multi-minute hangs because
+        // the walker traverses massive system/cache trees (.cache, .local/share,
+        // .steam, etc.) before reaching user project directories. Use $HOME as
+        // the search root only on Windows/macOS where exclusions are sufficient.
+        // On Linux, prefer common project parent directories if they exist; fall
+        // back to $HOME with the understanding that should_skip_dir() will prune
+        // the worst offenders.
+        #[cfg(target_os = "linux")]
+        let search_root = {
+            let candidates = ["Projets", "Projects", "dev", "src", "code", "workspace"];
+            candidates
+                .iter()
+                .map(|c| home.join(c))
+                .find(|p| p.is_dir())
+                .unwrap_or_else(|| home.clone())
+        };
+        #[cfg(not(target_os = "linux"))]
+        let search_root = home.clone();
+
         Self {
-            search_root: home.clone(),
+            search_root,
             home,
             temp_min_age_days: 7,
             big_files_top: 50,
