@@ -4,6 +4,32 @@ All notable changes to FreeYourDisk are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.10] - 2026-11-13
+
+### Fixed
+
+- **The window no longer pops to the foreground on its own.** The low-space
+  monitor raised and focused the main window on every alert. Combined with a
+  mount that is "full by design" — the 73 MB read-only vfat partition a locked
+  Samsung T7 Touch exposes (98 % used) — every USB or dock reconnection reset
+  the alert debounce and brought the window back. The monitor now:
+  - ignores removable mounts (on Linux, any device under
+    `/dev/disk/by-id/usb-*`, USB SSDs included) and read-only mounts — nothing
+    can be freed there and they are outside the cleaner's scope;
+  - never raises or focuses the window: it sends the desktop notification and
+    keeps the in-app low-space modal ready for the next time you open the app.
+  The watch policy is now a pure function covered by unit tests (T7 regression,
+  removable, read-only, debounce and re-alert after recovery).
+- **Tray widget.** The "reclaimable" slice of the donut chart had no colour
+  (`C.freed` was missing from the theme palette), and the chart option was a
+  derived *function* recomputed on every render instead of a derived value
+  (`$derived.by`).
+
+### Changed
+
+- CI is green again: Prettier formatting of the tray widget, and the
+  `manual_unwrap_or_default` Clippy lint in the git worktree scan.
+
 ## [0.4.5] - 2026-06-27
 
 ### Added

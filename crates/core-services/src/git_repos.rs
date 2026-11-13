@@ -137,10 +137,9 @@ fn is_worktree_clean(path: &Path) -> bool {
         let _ = tx.send(result);
     });
     // Wait up to 5 seconds; if the thread hasn't finished, treat as unsafe.
-    match rx.recv_timeout(std::time::Duration::from_secs(5)) {
-        Ok(result) => result,
-        Err(_) => false, // timeout or channel closed → treat as unsafe
-    }
+    // Timeout or closed channel → `false`: an unknown state is treated as unsafe.
+    rx.recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap_or(false)
 }
 
 /// Removable worktree items for a single repository.

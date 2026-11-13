@@ -43,6 +43,9 @@ export const C = {
   get faint() {
     return cssColor("--c-faint", "#5b6573");
   },
+  get freed() {
+    return cssColor("--c-freed", "#34d399");
+  },
   get danger() {
     return cssColor("--c-danger", "#fb7185");
   },

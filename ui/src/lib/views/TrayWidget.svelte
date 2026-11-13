@@ -27,7 +27,7 @@
   const GIB = 1024 ** 3;
 
   /** Donut: used vs free vs reclaimable overlay */
-  const chartOption = $derived<EChartsOption>(() => {
+  const chartOption = $derived.by<EChartsOption>(() => {
     if (!mount) return {};
     const free = Math.max(0, mount.total - mount.used);
     const safeReclaim = Math.min(reclaimable, free);
@@ -59,7 +59,9 @@
     };
   });
 
-  const pct = $derived(mount ? Math.round(usedPercent(mount.used, mount.total)) : 0);
+  const pct = $derived(
+    mount ? Math.round(usedPercent(mount.used, mount.total)) : 0,
+  );
   const freeBytes = $derived(mount ? Math.max(0, mount.total - mount.used) : 0);
 
   async function loadData() {
@@ -67,9 +69,9 @@
     try {
       const [diskList, scanResults] = await Promise.all([
         api.diskUsage(),
-        Promise.allSettled(
-          ["temp", "app_cache", "dev_cache"] as const,
-        ).then(() => [] as number[]),
+        Promise.allSettled(["temp", "app_cache", "dev_cache"] as const).then(
+          () => [] as number[],
+        ),
       ]);
 
       // Pick primary mount
@@ -154,13 +156,22 @@
   <header class="mb-3 flex items-center gap-2.5">
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
       <circle
-        cx="12" cy="12" r="8" fill="none"
-        stroke="var(--c-line)" stroke-width="3.5"
+        cx="12"
+        cy="12"
+        r="8"
+        fill="none"
+        stroke="var(--c-line)"
+        stroke-width="3.5"
       />
       <circle
-        cx="12" cy="12" r="8" fill="none"
-        stroke="var(--c-accent)" stroke-width="3.5"
-        stroke-dasharray="36 50" stroke-linecap="round"
+        cx="12"
+        cy="12"
+        r="8"
+        fill="none"
+        stroke="var(--c-accent)"
+        stroke-width="3.5"
+        stroke-dasharray="36 50"
+        stroke-linecap="round"
         transform="rotate(-90 12 12)"
       />
     </svg>
@@ -176,8 +187,10 @@
   {:else if mount}
     <!-- Donut chart: used / free / reclaimable -->
     <div class="relative mx-auto w-full max-w-[200px]">
-      <Chart option={chartOption()} height={180} />
-      <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+      <Chart option={chartOption} height={180} />
+      <div
+        class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center"
+      >
         <span class="nums text-2xl font-semibold text-ink">
           {pct}<span class="text-muted text-lg">%</span>
         </span>
@@ -194,13 +207,16 @@
         <span class="text-faint"> / {humanizeBytes(mount.total)}</span>
       </span>
       <span class="text-freed nums font-medium">
-        {humanizeBytes(freeBytes)} {$_("tray.free_label")}
+        {humanizeBytes(freeBytes)}
+        {$_("tray.free_label")}
       </span>
     </div>
 
     <!-- Reclaimable badge + quick clean button -->
     <div class="mt-3 flex items-center gap-2">
-      <div class="bg-freed/10 text-freed flex flex-1 items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium">
+      <div
+        class="bg-freed/10 text-freed flex flex-1 items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium"
+      >
         <Sparkle size={14} weight="fill" />
         <span class="nums">{humanizeBytes(reclaimable)}</span>
         <span class="text-freed/70">{$_("tray.reclaimable")}</span>
